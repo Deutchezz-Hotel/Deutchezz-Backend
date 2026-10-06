@@ -63,3 +63,6 @@ C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Api\bin\Debug\net9.0\Microsof
 C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Api\bin\Debug\net9.0\Npgsql.dll
 C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Api\bin\Debug\net9.0\Npgsql.EntityFrameworkCore.PostgreSQL.dll
 C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Api\bin\Debug\net9.0\System.IdentityModel.Tokens.Jwt.dll
+C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Api\bin\Debug\net9.0\Asp.Versioning.Abstractions.dll
+C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Api\bin\Debug\net9.0\Asp.Versioning.Http.dll
+C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Api\bin\Debug\net9.0\Asp.Versioning.Mvc.dll

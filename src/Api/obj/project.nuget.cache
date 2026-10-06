@@ -1,9 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "j+5lVR1aF84=",
+  "dgSpecHash": "A301eNoHR14=",
   "success": true,
   "projectFilePath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Api\\Api.csproj",
   "expectedPackageFiles": [
+    "C:\\Users\\OYALE\\.nuget\\packages\\asp.versioning.abstractions\\8.1.0\\asp.versioning.abstractions.8.1.0.nupkg.sha512",
+    "C:\\Users\\OYALE\\.nuget\\packages\\asp.versioning.http\\8.1.0\\asp.versioning.http.8.1.0.nupkg.sha512",
+    "C:\\Users\\OYALE\\.nuget\\packages\\asp.versioning.mvc\\8.1.0\\asp.versioning.mvc.8.1.0.nupkg.sha512",
     "C:\\Users\\OYALE\\.nuget\\packages\\microsoft.aspnetcore.authentication.jwtbearer\\9.0.9\\microsoft.aspnetcore.authentication.jwtbearer.9.0.9.nupkg.sha512",
     "C:\\Users\\OYALE\\.nuget\\packages\\microsoft.aspnetcore.cryptography.internal\\9.0.9\\microsoft.aspnetcore.cryptography.internal.9.0.9.nupkg.sha512",
     "C:\\Users\\OYALE\\.nuget\\packages\\microsoft.aspnetcore.cryptography.keyderivation\\9.0.9\\microsoft.aspnetcore.cryptography.keyderivation.9.0.9.nupkg.sha512",
