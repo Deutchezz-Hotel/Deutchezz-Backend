@@ -15,3 +15,5 @@ C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Infrastructure\obj\Debug\net9
 C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Infrastructure\obj\Debug\net9.0\refint\Infrastructure.dll
 C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Infrastructure\obj\Debug\net9.0\Infrastructure.pdb
 C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Infrastructure\obj\Debug\net9.0\ref\Infrastructure.dll
+C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Infrastructure\bin\Debug\net9.0\Infrastructure.runtimeconfig.json
+C:\Users\OYALE\Desktop\Project\Deutchezz_Hotel\src\Infrastructure\obj\Debug\net9.0\Infrastructure.genruntimeconfig.cache
