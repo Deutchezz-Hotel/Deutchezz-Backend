@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Deutchezz.Backend")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5ea520377b31573195db2964d18039f952d4c3ee")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+edf4cf0245083197a2a1edc04fb13a81edd826fc")]
 [assembly: System.Reflection.AssemblyProductAttribute("Deutchezz.Backend")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Deutchezz.Backend")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

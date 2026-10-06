@@ -4,6 +4,317 @@
     "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\tests\\Deutchezz.ArchitectureTests\\Deutchezz.ArchitectureTests.csproj": {}
   },
   "projects": {
+    "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Api\\Api.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Api\\Api.csproj",
+        "projectName": "Api",
+        "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Api\\Api.csproj",
+        "packagesPath": "C:\\Users\\OYALE\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Api\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\OYALE\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net9.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net9.0": {
+            "targetAlias": "net9.0",
+            "projectReferences": {
+              "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj": {
+                "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj"
+              },
+              "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\Infrastructure.csproj": {
+                "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\Infrastructure.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "dependencies": {
+            "Asp.Versioning.Mvc": {
+              "target": "Package",
+              "version": "[8.1.0, )"
+            },
+            "Microsoft.AspNetCore.OpenApi": {
+              "target": "Package",
+              "version": "[9.0.18, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.AspNetCore.App": {
+              "privateAssets": "none"
+            },
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.316/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj",
+        "projectName": "Application",
+        "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj",
+        "packagesPath": "C:\\Users\\OYALE\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\OYALE\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net9.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net9.0": {
+            "targetAlias": "net9.0",
+            "projectReferences": {
+              "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj": {
+                "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "dependencies": {
+            "Microsoft.EntityFrameworkCore": {
+              "target": "Package",
+              "version": "[9.0.9, )"
+            },
+            "Microsoft.EntityFrameworkCore.Relational": {
+              "target": "Package",
+              "version": "[9.0.9, )"
+            },
+            "Microsoft.Extensions.Identity.Core": {
+              "target": "Package",
+              "version": "[9.0.9, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.316/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj",
+        "projectName": "Domain",
+        "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj",
+        "packagesPath": "C:\\Users\\OYALE\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\OYALE\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net9.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net9.0": {
+            "targetAlias": "net9.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "dependencies": {
+            "Microsoft.Extensions.Identity.Stores": {
+              "target": "Package",
+              "version": "[9.0.9, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.316/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\Infrastructure.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\Infrastructure.csproj",
+        "projectName": "Infrastructure",
+        "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\Infrastructure.csproj",
+        "packagesPath": "C:\\Users\\OYALE\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\OYALE\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net9.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net9.0": {
+            "targetAlias": "net9.0",
+            "projectReferences": {
+              "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj": {
+                "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj"
+              },
+              "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj": {
+                "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "dependencies": {
+            "Microsoft.AspNetCore.Authentication.JwtBearer": {
+              "target": "Package",
+              "version": "[9.0.9, )"
+            },
+            "Microsoft.AspNetCore.Identity.EntityFrameworkCore": {
+              "target": "Package",
+              "version": "[9.0.9, )"
+            },
+            "Microsoft.EntityFrameworkCore.Design": {
+              "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[9.0.9, )"
+            },
+            "Npgsql.EntityFrameworkCore.PostgreSQL": {
+              "target": "Package",
+              "version": "[9.0.4, )"
+            },
+            "System.IdentityModel.Tokens.Jwt": {
+              "target": "Package",
+              "version": "[8.0.2, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.316/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
     "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\tests\\Deutchezz.ArchitectureTests\\Deutchezz.ArchitectureTests.csproj": {
       "version": "1.0.0",
       "restore": {
@@ -25,7 +336,20 @@
         "frameworks": {
           "net9.0": {
             "targetAlias": "net9.0",
-            "projectReferences": {}
+            "projectReferences": {
+              "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Api\\Api.csproj": {
+                "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Api\\Api.csproj"
+              },
+              "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj": {
+                "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj"
+              },
+              "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj": {
+                "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj"
+              },
+              "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\Infrastructure.csproj": {
+                "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\Infrastructure.csproj"
+              }
+            }
           }
         },
         "warningProperties": {
