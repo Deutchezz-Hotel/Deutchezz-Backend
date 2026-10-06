@@ -6,6 +6,9 @@ public class User : Microsoft.AspNetCore.Identity.IdentityUser<Guid>
 {
     public string? FullName { get; set; }
     public bool IsActive { get; set; } = true;
+    public DateTime? LastLoginAt { get; set; }
+    public string? RefreshTokenHash { get; set; }
+    public DateTime? RefreshTokenExpiresAt { get; set; }
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

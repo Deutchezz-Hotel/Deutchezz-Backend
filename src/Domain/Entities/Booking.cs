@@ -7,6 +7,7 @@ public class Booking : AuditableEntity
 {
     public string BookingReference { get; set; } = string.Empty;
     public Guid GuestId { get; set; }
+    public Guest? Guest { get; set; }
     public DateOnly CheckInDate { get; set; }
     public DateOnly CheckOutDate { get; set; }
     public int Nights { get; set; }

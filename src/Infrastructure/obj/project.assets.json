@@ -1129,7 +1129,9 @@
         "framework": ".NETCoreApp,Version=v9.0",
         "dependencies": {
           "Domain": "1.0.0",
-          "Microsoft.EntityFrameworkCore": "9.0.9"
+          "Microsoft.EntityFrameworkCore": "9.0.9",
+          "Microsoft.EntityFrameworkCore.Relational": "9.0.9",
+          "Microsoft.Extensions.Identity.Core": "9.0.9"
         },
         "compile": {
           "bin/placeholder/Application.dll": {}
