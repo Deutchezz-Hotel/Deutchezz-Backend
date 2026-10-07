@@ -1,66 +1,84 @@
+using Deutchezz.Application.Common.Options;
 using Deutchezz.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Deutchezz.Infrastructure.Seeders;
 
 public static class Seeder
 {
-    public static async Task SeedAsync(this IServiceProvider services)
+    private static readonly string[] RoleNames = ["Admin", "Receptionist", "Guest"];
+
+    public static async Task SeedRolesAsync(this IServiceProvider services)
     {
         using var scope = services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<Data.AppDbContext>();
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<Role>>();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-        var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Seeder");
-        var env = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>();
 
-        foreach (var roleName in new[] { "Admin", "Receptionist", "Guest" })
+        foreach (var roleName in RoleNames)
         {
             if (!await roleManager.RoleExistsAsync(roleName))
             {
                 await roleManager.CreateAsync(new Role { Name = roleName });
             }
         }
+    }
 
-        var adminEmail = config["Seed:Admin:Email"];
-        var adminPassword = config["Seed:Admin:Password"];
-        if (!string.IsNullOrWhiteSpace(adminEmail) && !string.IsNullOrWhiteSpace(adminPassword))
+    public static async Task SeedAdminAsync(this IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var seed = scope.ServiceProvider.GetRequiredService<IOptions<SeedOptions>>().Value;
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Seeder");
+
+        if (!seed.HasAdminCredentials)
         {
-            var admin = await userManager.FindByEmailAsync(adminEmail);
-            if (admin == null)
-            {
-                admin = new User
-                {
-                    UserName = adminEmail,
-                    Email = adminEmail,
-                    FullName = config["Seed:Admin:FullName"] ?? "Administrator",
-                    EmailConfirmed = true
-                };
-                var result = await userManager.CreateAsync(admin, adminPassword);
-                if (result.Succeeded)
-                {
-                    await userManager.AddToRoleAsync(admin, "Admin");
-                }
-                else
-                {
-                    logger.LogError("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
-                }
-            }
+            logger.LogWarning(
+                "Seed:AdminEmail/Seed:AdminPassword are not configured - skipping admin user seeding. " +
+                "Set them with: dotnet user-secrets set \"Seed:AdminEmail\" ... --project src/Deutchezz.csproj");
+            return;
         }
 
-        if (env.IsDevelopment() && !context.RoomTypes.Any())
+        if (await userManager.FindByEmailAsync(seed.AdminEmail) is not null)
         {
-            await SeedSampleRoomsAsync(context, logger);
+            return;
+        }
+
+        var admin = new User
+        {
+            UserName = seed.AdminEmail,
+            Email = seed.AdminEmail,
+            FullName = "Administrator",
+            EmailConfirmed = true
+        };
+
+        var result = await userManager.CreateAsync(admin, seed.AdminPassword);
+        if (result.Succeeded)
+        {
+            await userManager.AddToRoleAsync(admin, "Admin");
+            logger.LogInformation("Seeded admin user {Email}", seed.AdminEmail);
+        }
+        else
+        {
+            logger.LogError("Failed to create admin user: {Errors}",
+                string.Join(", ", result.Errors.Select(e => e.Description)));
         }
     }
 
-    private static async Task SeedSampleRoomsAsync(Data.AppDbContext context, ILogger logger)
+    public static async Task SeedRoomInventoryAsync(this IServiceProvider services)
     {
+        using var scope = services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<Data.AppDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Seeder");
+
+        if (await context.RoomTypes.AnyAsync() || await context.Rooms.AnyAsync())
+        {
+            logger.LogInformation("Room inventory already present - skipping room seeding.");
+            return;
+        }
+
         var deluxe = new RoomType
         {
             Name = "Deluxe",
