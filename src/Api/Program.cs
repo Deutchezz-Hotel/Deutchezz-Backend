@@ -1,6 +1,7 @@
 using Deutchezz.Application;
 using Deutchezz.Infrastructure;
 using Deutchezz.Infrastructure.Seeders;
+using Deutchezz.Api.Extensions;
 using Asp.Versioning;
 using System.Text.Json.Serialization;
 
@@ -15,6 +16,7 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
+builder.Services.AddValidatedOptions(builder.Configuration);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -27,6 +29,11 @@ builder.Services.AddApiVersioning(options =>
 });
 
 var app = builder.Build();
+
+// Fail fast: ValidateOnStart normally runs when the host starts, which happens *after* the
+// migration/seed block below. Force-validate the options now so a missing or invalid setting
+// (empty connection string, Jwt:Key < 32 bytes, ...) aborts before any DB access.
+app.Services.ValidateRequiredOptions();
 
 if (app.Environment.IsDevelopment())
 {

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Deutchezz</RootNamespace>
     <AssemblyName>Deutchezz</AssemblyName>
+    <UserSecretsId>cdaa8b81-1b62-4af7-8482-1a99c82496ca</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

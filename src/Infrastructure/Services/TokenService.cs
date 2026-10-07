@@ -4,19 +4,20 @@ using System.Security.Cryptography;
 using System.Text;
 using Deutchezz.Application.Abstractions;
 using Deutchezz.Infrastructure.Data;
-using Microsoft.Extensions.Configuration;
+using Deutchezz.Application.Common.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Deutchezz.Infrastructure.Services;
 
-public class TokenService(IConfiguration configuration, AppDbContext context) : ITokenService
+public class TokenService(IOptions<JwtOptions> jwtOptions, AppDbContext context) : ITokenService
 {
     public (string token, DateTime expiresAt) GenerateAccessToken(Guid userId, IEnumerable<string> roles)
     {
-        var key = configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key not configured");
-        var keyBytes = Encoding.UTF8.GetBytes(key);
-        var expiresAt = DateTime.UtcNow.AddMinutes(int.Parse(configuration["Jwt:AccessTokenExpiryMinutes"] ?? "60"));
+        var settings = jwtOptions.Value;
+        var keyBytes = Encoding.UTF8.GetBytes(settings.Key);
+        var expiresAt = DateTime.UtcNow.AddMinutes(settings.AccessTokenMinutes);
 
         var claims = new List<Claim>
         {
@@ -27,8 +28,8 @@ public class TokenService(IConfiguration configuration, AppDbContext context) : 
 
         var credentials = new SigningCredentials(new SymmetricSecurityKey(keyBytes), SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(
-            issuer: configuration["Jwt:Issuer"],
-            audience: configuration["Jwt:Audience"],
+            issuer: settings.Issuer,
+            audience: settings.Audience,
             claims: claims,
             expires: expiresAt,
             signingCredentials: credentials);
@@ -59,7 +60,7 @@ public class TokenService(IConfiguration configuration, AppDbContext context) : 
         var (accessToken, expiresAt) = GenerateAccessToken(user.Id, roles);
         var newRefreshToken = GenerateRefreshToken();
         user.RefreshTokenHash = HashToken(newRefreshToken);
-        user.RefreshTokenExpiresAt = DateTime.UtcNow.AddDays(int.Parse(configuration["Jwt:RefreshTokenExpiryDays"] ?? "7"));
+        user.RefreshTokenExpiresAt = DateTime.UtcNow.AddDays(jwtOptions.Value.RefreshTokenDays);
         await context.SaveChangesAsync(cancellationToken);
         return (accessToken, newRefreshToken, expiresAt);
     }
