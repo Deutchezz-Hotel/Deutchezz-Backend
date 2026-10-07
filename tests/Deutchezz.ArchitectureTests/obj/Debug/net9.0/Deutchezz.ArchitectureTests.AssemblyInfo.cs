@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Deutchezz.ArchitectureTests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+edf4cf0245083197a2a1edc04fb13a81edd826fc")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e8270ceb3c8c0f95b70f87deb21ad2ddfe89a4f6")]
 [assembly: System.Reflection.AssemblyProductAttribute("Deutchezz.ArchitectureTests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Deutchezz.ArchitectureTests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

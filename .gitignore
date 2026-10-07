@@ -1,0 +1,11 @@
+# build output
+bin/
+obj/
+
+# user secrets (never commit)
+secrets.json
+
+# IDE
+.vs/
+.idea/
+*.user

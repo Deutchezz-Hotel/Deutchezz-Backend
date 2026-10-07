@@ -1,40 +1,45 @@
-using Deutchezz.Application;
-using Deutchezz.Domain.Common;
-using Deutchezz.Infrastructure;
+using System.Reflection;
 using NetArchTest.Rules;
 
 namespace Deutchezz.ArchitectureTests;
 
 public class ArchitectureTests
 {
-    private const string DomainAssembly = "Domain";
-    private const string ApplicationAssembly = "Application";
-    private const string InfrastructureAssembly = "Infrastructure";
-    private const string ApiAssembly = "Api";
+    private static readonly Assembly AppAssembly = typeof(Deutchezz.Domain.Common.Result).Assembly;
+
+    private static void AssertSuccessful(TestResult result) =>
+        Assert.True(result.IsSuccessful, string.Join(", ", result.FailingTypeNames ?? Array.Empty<string>()));
 
     [Fact]
-    public void Domain_Should_Not_Have_Dependencies()
+    public void Domain_Should_Not_Depend_On_Application_Infrastructure_Or_Api()
     {
-        var types = Types.InAssembly(typeof(Result).Assembly);
-        var result = types.Should().NotHaveDependencyOnAny(InfrastructureAssembly, ApiAssembly, ApplicationAssembly).GetResult();
-        Assert.True(result.IsSuccessful, string.Join(", ", result.FailingTypeNames ?? Array.Empty<string>()));
+        var result = Types.InAssembly(AppAssembly)
+            .That().ResideInNamespace("Deutchezz.Domain")
+            .Should().NotHaveDependencyOnAny("Deutchezz.Application", "Deutchezz.Infrastructure", "Deutchezz.Api")
+            .GetResult();
+
+        AssertSuccessful(result);
     }
 
     [Fact]
     public void Application_Should_Not_Depend_On_Infrastructure_Or_Api()
     {
-        var types = Types.InAssembly(typeof(Deutchezz.Application.DependencyInjection).Assembly);
-        var result = types.Should().NotHaveDependencyOnAny(InfrastructureAssembly, ApiAssembly).GetResult();
-        Assert.True(result.IsSuccessful, string.Join(", ", result.FailingTypeNames ?? Array.Empty<string>()));
+        var result = Types.InAssembly(AppAssembly)
+            .That().ResideInNamespace("Deutchezz.Application")
+            .Should().NotHaveDependencyOnAny("Deutchezz.Infrastructure", "Deutchezz.Api")
+            .GetResult();
+
+        AssertSuccessful(result);
     }
 
     [Fact]
     public void Infrastructure_Should_Not_Depend_On_Api()
     {
-        var types = Types.InAssembly(typeof(Deutchezz.Infrastructure.DependencyInjection).Assembly);
-        var result = types.Should().NotHaveDependencyOnAny(ApiAssembly).GetResult();
-        Assert.True(result.IsSuccessful, string.Join(", ", result.FailingTypeNames ?? Array.Empty<string>()));
+        var result = Types.InAssembly(AppAssembly)
+            .That().ResideInNamespace("Deutchezz.Infrastructure")
+            .Should().NotHaveDependencyOn("Deutchezz.Api")
+            .GetResult();
+
+        AssertSuccessful(result);
     }
 }
-
-public static class DependencyInjectionInfrastructureMarker { } // Marker for test to reference Infrastructure assembly

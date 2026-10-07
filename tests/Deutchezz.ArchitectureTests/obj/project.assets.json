@@ -1017,71 +1017,30 @@
           "build/net6.0/xunit.runner.visualstudio.props": {}
         }
       },
-      "Api/1.0.0": {
+      "Deutchezz/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v9.0",
         "dependencies": {
-          "Application": "1.0.0",
           "Asp.Versioning.Mvc": "8.1.0",
-          "Infrastructure": "1.0.0",
-          "Microsoft.AspNetCore.OpenApi": "9.0.18"
-        },
-        "compile": {
-          "bin/placeholder/Api.dll": {}
-        },
-        "runtime": {
-          "bin/placeholder/Api.dll": {}
-        },
-        "frameworkReferences": [
-          "Microsoft.AspNetCore.App"
-        ]
-      },
-      "Application/1.0.0": {
-        "type": "project",
-        "framework": ".NETCoreApp,Version=v9.0",
-        "dependencies": {
-          "Domain": "1.0.0",
-          "Microsoft.EntityFrameworkCore": "9.0.9",
-          "Microsoft.EntityFrameworkCore.Relational": "9.0.9",
-          "Microsoft.Extensions.Identity.Core": "9.0.9"
-        },
-        "compile": {
-          "bin/placeholder/Application.dll": {}
-        },
-        "runtime": {
-          "bin/placeholder/Application.dll": {}
-        }
-      },
-      "Domain/1.0.0": {
-        "type": "project",
-        "framework": ".NETCoreApp,Version=v9.0",
-        "dependencies": {
-          "Microsoft.Extensions.Identity.Stores": "9.0.9"
-        },
-        "compile": {
-          "bin/placeholder/Domain.dll": {}
-        },
-        "runtime": {
-          "bin/placeholder/Domain.dll": {}
-        }
-      },
-      "Infrastructure/1.0.0": {
-        "type": "project",
-        "framework": ".NETCoreApp,Version=v9.0",
-        "dependencies": {
-          "Application": "1.0.0",
-          "Domain": "1.0.0",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "9.0.9",
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "9.0.9",
+          "Microsoft.AspNetCore.OpenApi": "9.0.18",
+          "Microsoft.EntityFrameworkCore": "9.0.9",
+          "Microsoft.EntityFrameworkCore.Relational": "9.0.9",
+          "Microsoft.Extensions.Identity.Core": "9.0.9",
+          "Microsoft.Extensions.Identity.Stores": "9.0.9",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "9.0.4",
           "System.IdentityModel.Tokens.Jwt": "8.0.2"
         },
         "compile": {
-          "bin/placeholder/Infrastructure.dll": {}
+          "bin/placeholder/Deutchezz.dll": {}
         },
         "runtime": {
-          "bin/placeholder/Infrastructure.dll": {}
-        }
+          "bin/placeholder/Deutchezz.dll": {}
+        },
+        "frameworkReferences": [
+          "Microsoft.AspNetCore.App"
+        ]
       }
     }
   },
@@ -2401,33 +2360,15 @@
         "xunit.runner.visualstudio.nuspec"
       ]
     },
-    "Api/1.0.0": {
+    "Deutchezz/1.0.0": {
       "type": "project",
-      "path": "../../src/Api/Api.csproj",
-      "msbuildProject": "../../src/Api/Api.csproj"
-    },
-    "Application/1.0.0": {
-      "type": "project",
-      "path": "../../src/Application/Application.csproj",
-      "msbuildProject": "../../src/Application/Application.csproj"
-    },
-    "Domain/1.0.0": {
-      "type": "project",
-      "path": "../../src/Domain/Domain.csproj",
-      "msbuildProject": "../../src/Domain/Domain.csproj"
-    },
-    "Infrastructure/1.0.0": {
-      "type": "project",
-      "path": "../../src/Infrastructure/Infrastructure.csproj",
-      "msbuildProject": "../../src/Infrastructure/Infrastructure.csproj"
+      "path": "../../src/Deutchezz.csproj",
+      "msbuildProject": "../../src/Deutchezz.csproj"
     }
   },
   "projectFileDependencyGroups": {
     "net9.0": [
-      "Api >= 1.0.0",
-      "Application >= 1.0.0",
-      "Domain >= 1.0.0",
-      "Infrastructure >= 1.0.0",
+      "Deutchezz >= 1.0.0",
       "Microsoft.NET.Test.Sdk >= 17.12.0",
       "NetArchTest.Rules >= 1.3.2",
       "coverlet.collector >= 6.0.2",
@@ -2460,17 +2401,8 @@
         "net9.0": {
           "targetAlias": "net9.0",
           "projectReferences": {
-            "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Api\\Api.csproj": {
-              "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Api\\Api.csproj"
-            },
-            "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj": {
-              "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Application\\Application.csproj"
-            },
-            "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj": {
-              "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Domain\\Domain.csproj"
-            },
-            "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\Infrastructure.csproj": {
-              "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Infrastructure\\Infrastructure.csproj"
+            "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Deutchezz.csproj": {
+              "projectPath": "C:\\Users\\OYALE\\Desktop\\Project\\Deutchezz_Hotel\\src\\Deutchezz.csproj"
             }
           }
         }
