@@ -3,6 +3,7 @@ using Deutchezz.Infrastructure;
 using Deutchezz.Infrastructure.Data;
 using Deutchezz.Infrastructure.Seeders;
 using Deutchezz.Api.Extensions;
+using Deutchezz.Api;
 using Asp.Versioning;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
@@ -24,6 +25,7 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddApiVersioning(options =>
 {
     options.DefaultApiVersion = new ApiVersion(1, 0);
@@ -63,6 +65,7 @@ if (!app.Environment.IsProduction())
     }
 }
 
+app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();

@@ -17,11 +17,11 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    ActorUserId = table.Column<Guid>(type: "uuid", nullable: true),
+                    UserId = table.Column<Guid>(type: "uuid", nullable: true),
                     Action = table.Column<string>(type: "text", nullable: false),
                     EntityType = table.Column<string>(type: "text", nullable: false),
                     EntityId = table.Column<Guid>(type: "uuid", nullable: true),
-                    Details = table.Column<string>(type: "text", nullable: true),
+                    Description = table.Column<string>(type: "text", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
@@ -47,15 +47,17 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 name: "BookingRoomTypes",
                 columns: table => new
                 {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
                     BookingId = table.Column<Guid>(type: "uuid", nullable: false),
                     RoomTypeId = table.Column<Guid>(type: "uuid", nullable: false),
                     Quantity = table.Column<int>(type: "integer", nullable: false),
-                    NightlyRateSnapshot = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
-                    LineTotal = table.Column<decimal>(type: "numeric(18,2)", nullable: false)
+                    RatePerNight = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
+                    NumberOfNights = table.Column<int>(type: "integer", nullable: false),
+                    Subtotal = table.Column<decimal>(type: "numeric(18,2)", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_BookingRoomTypes", x => new { x.BookingId, x.RoomTypeId });
+                    table.PrimaryKey("PK_BookingRoomTypes", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -63,9 +65,10 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    FullName = table.Column<string>(type: "text", nullable: false),
+                    FirstName = table.Column<string>(type: "text", nullable: false),
+                    LastName = table.Column<string>(type: "text", nullable: false),
                     Email = table.Column<string>(type: "text", nullable: false),
-                    Phone = table.Column<string>(type: "text", nullable: true),
+                    PhoneNumber = table.Column<string>(type: "text", nullable: true),
                     UserId = table.Column<Guid>(type: "uuid", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
@@ -101,7 +104,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     BookingId = table.Column<Guid>(type: "uuid", nullable: false),
                     Amount = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
                     Method = table.Column<string>(type: "text", nullable: false),
+                    Status = table.Column<string>(type: "text", nullable: false),
                     Reference = table.Column<string>(type: "text", nullable: true),
+                    Notes = table.Column<string>(type: "text", nullable: true),
                     RecordedByUserId = table.Column<Guid>(type: "uuid", nullable: true),
                     PaidAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -116,7 +121,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 name: "RoomAssignments",
                 columns: table => new
                 {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
                     BookingId = table.Column<Guid>(type: "uuid", nullable: false),
+                    BookingRoomTypeId = table.Column<Guid>(type: "uuid", nullable: false),
                     RoomId = table.Column<Guid>(type: "uuid", nullable: false),
                     AssignedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     AssignedByUserId = table.Column<Guid>(type: "uuid", nullable: true),
@@ -124,7 +131,7 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_RoomAssignments", x => new { x.BookingId, x.RoomId });
+                    table.PrimaryKey("PK_RoomAssignments", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -136,6 +143,7 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     RoomTypeId = table.Column<Guid>(type: "uuid", nullable: false),
                     Status = table.Column<string>(type: "text", nullable: false),
                     Floor = table.Column<string>(type: "text", nullable: true),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
@@ -153,8 +161,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     Name = table.Column<string>(type: "text", nullable: false),
                     Description = table.Column<string>(type: "text", nullable: true),
-                    NightlyRate = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
-                    MaxOccupancy = table.Column<int>(type: "integer", nullable: false),
+                    BasePrice = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
+                    MaximumOccupancy = table.Column<int>(type: "integer", nullable: false),
+                    BedType = table.Column<string>(type: "text", nullable: true),
                     IsActive = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -171,7 +180,8 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    FullName = table.Column<string>(type: "text", nullable: true),
+                    FirstName = table.Column<string>(type: "text", nullable: true),
+                    LastName = table.Column<string>(type: "text", nullable: true),
                     IsActive = table.Column<bool>(type: "boolean", nullable: false),
                     LastLoginAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     RefreshTokenHash = table.Column<string>(type: "text", nullable: true),
@@ -231,8 +241,11 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     CheckInDate = table.Column<DateOnly>(type: "date", nullable: false),
                     CheckOutDate = table.Column<DateOnly>(type: "date", nullable: false),
                     Nights = table.Column<int>(type: "integer", nullable: false),
+                    Adults = table.Column<int>(type: "integer", nullable: false),
+                    Children = table.Column<int>(type: "integer", nullable: false),
                     Status = table.Column<string>(type: "text", nullable: false),
                     PaymentStatus = table.Column<string>(type: "text", nullable: false),
+                    SpecialRequests = table.Column<string>(type: "text", nullable: true),
                     TotalAmount = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
                     CancelledAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CancellationReason = table.Column<string>(type: "text", nullable: true),
@@ -364,6 +377,12 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 column: "RoleId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_BookingRoomTypes_BookingId_RoomTypeId",
+                table: "BookingRoomTypes",
+                columns: new[] { "BookingId", "RoomTypeId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_BookingRoomTypes_RoomTypeId",
                 table: "BookingRoomTypes",
                 column: "RoomTypeId");
@@ -383,6 +402,11 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 name: "IX_Bookings_GuestId",
                 table: "Bookings",
                 column: "GuestId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RoomAssignments_BookingId_RoomId",
+                table: "RoomAssignments",
+                columns: new[] { "BookingId", "RoomId" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Rooms_RoomNumber",

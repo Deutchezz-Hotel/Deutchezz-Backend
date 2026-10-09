@@ -21,8 +21,8 @@ public class PaymentService(IAppDbContext db, IActivityLogger activityLogger) : 
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
 
-        if (booking.Status is BookingStatus.Cancelled or BookingStatus.NoShow)
-            return Error.Conflict("payment.booking_closed", "Cannot record a payment for a closed booking");
+        if (booking.Status is BookingStatus.Cancelled)
+            return Error.Conflict("payment.booking_closed", "Cannot record a payment for a cancelled booking");
 
         var paid = await db.Payments
             .Where(p => p.BookingId == request.BookingId && p.Amount > 0)
@@ -37,7 +37,9 @@ public class PaymentService(IAppDbContext db, IActivityLogger activityLogger) : 
             BookingId = booking.Id,
             Amount = request.Amount,
             Method = method,
+            Status = PaymentStatus.Paid,
             Reference = request.Reference,
+            Notes = request.Notes,
             RecordedByUserId = recordedByUserId,
             PaidAt = DateTime.UtcNow
         };
@@ -52,6 +54,7 @@ public class PaymentService(IAppDbContext db, IActivityLogger activityLogger) : 
         db.Notifications.Add(new Domain.Entities.Notification
         {
             GuestId = booking.GuestId,
+            UserId = booking.CreatedByUserId,
             Type = NotificationType.PaymentReceived,
             Title = "Payment received",
             Message = $"A payment of {request.Amount} was recorded for booking {booking.BookingReference}.",
@@ -62,7 +65,7 @@ public class PaymentService(IAppDbContext db, IActivityLogger activityLogger) : 
         await activityLogger.LogAsync(recordedByUserId, "payment.recorded", "Payment", payment.Id,
             $"Recorded {request.Amount} via {method} for booking {booking.BookingReference}", cancellationToken);
 
-        return new PaymentResponse(payment.Id, payment.BookingId, payment.Amount, method.ToString(), payment.Reference, payment.CreatedAt, recordedByUserId);
+        return new PaymentResponse(payment.Id, payment.BookingId, payment.Amount, method.ToString(), payment.Status.ToString(), payment.Reference, payment.Notes, payment.CreatedAt, recordedByUserId);
     }
 
     public async Task<Result<PaginatedResult<PaymentResponse>>> ListAsync(PaymentQuery query, CancellationToken cancellationToken)
@@ -89,7 +92,7 @@ public class PaymentService(IAppDbContext db, IActivityLogger activityLogger) : 
             .OrderByDescending(p => p.CreatedAt)
             .Skip((query.PageNumber - 1) * query.PageSize)
             .Take(query.PageSize)
-            .Select(p => new PaymentResponse(p.Id, p.BookingId, p.Amount, p.Method.ToString(), p.Reference, p.CreatedAt, p.RecordedByUserId))
+            .Select(p => new PaymentResponse(p.Id, p.BookingId, p.Amount, p.Method.ToString(), p.Status.ToString(), p.Reference, p.Notes, p.CreatedAt, p.RecordedByUserId))
             .ToListAsync(cancellationToken);
 
         return new PaginatedResult<PaymentResponse>(items, total, query.PageNumber, query.PageSize);

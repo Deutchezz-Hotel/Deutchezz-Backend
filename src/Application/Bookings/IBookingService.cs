@@ -11,7 +11,7 @@ public interface IBookingService
     Task<Result<BookingResponse>> GetByIdForOwnerAsync(Guid id, Guid userId, CancellationToken cancellationToken);
     Task<Result<PaginatedResult<BookingSummaryResponse>>> SearchAsync(BookingSearchQuery query, CancellationToken cancellationToken);
     Task<Result<BookingResponse>> GetDetailAsync(Guid id, CancellationToken cancellationToken);
-    Task<Result<BookingResponse>> AssignAndCheckInAsync(Guid id, CheckInRequest request, Guid staffUserId, CancellationToken cancellationToken);
+    Task<Result<BookingResponse>> AssignRoomsAsync(Guid id, RoomAssignmentRequest request, Guid staffUserId, CancellationToken cancellationToken);
+    Task<Result<BookingResponse>> CheckInAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken);
     Task<Result<BookingResponse>> CheckOutAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken);
-    Task<Result<BookingResponse>> MarkNoShowAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken);
 }

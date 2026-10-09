@@ -27,7 +27,7 @@ public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IR
 
         var queryable = await q
             .Join(db.RoomTypes, r => r.RoomTypeId, rt => rt.Id,
-                (r, rt) => new RoomResponse(r.Id, r.RoomNumber, r.RoomTypeId, rt.Name, r.Status.ToString(), r.Floor))
+                (r, rt) => new RoomResponse(r.Id, r.RoomNumber, r.RoomTypeId, rt.Name, r.Status.ToString(), r.Floor, r.IsActive))
             .OrderBy(r => r.RoomNumber)
             .Skip((query.PageNumber - 1) * query.PageSize)
             .Take(query.PageSize)
@@ -46,7 +46,7 @@ public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IR
         if (room is null)
             return Error.NotFound("room.not_found", "Room not found");
 
-        return new RoomResponse(room.Room.Id, room.Room.RoomNumber, room.Room.RoomTypeId, room.RTypeName, room.Room.Status.ToString(), room.Room.Floor);
+        return new RoomResponse(room.Room.Id, room.Room.RoomNumber, room.Room.RoomTypeId, room.RTypeName, room.Room.Status.ToString(), room.Room.Floor, room.Room.IsActive);
     }
 
     public async Task<Result<RoomResponse>> CreateAsync(CreateRoomRequest request, Guid adminUserId, CancellationToken cancellationToken)
@@ -68,6 +68,7 @@ public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IR
             RoomTypeId = request.RoomTypeId,
             Floor = request.Floor,
             Status = RoomStatus.Available,
+            IsActive = true,
             IsDeleted = false
         };
         db.Rooms.Add(room);
@@ -141,8 +142,8 @@ public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IR
         if (hasActiveAssignment)
             return Error.Conflict("room.in_use", "Cannot deactivate a room that is currently assigned");
 
-        room.IsDeleted = true;
-        room.DeletedAt = DateTime.UtcNow;
+        room.IsActive = false;
+        room.Status = RoomStatus.Inactive;
         await db.SaveChangesAsync(cancellationToken);
 
         await activityLogger.LogAsync(adminUserId, "room.deactivated", "Room", room.Id, null, cancellationToken);
@@ -154,8 +155,8 @@ public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IR
     {
         RoomBoardFilter.Available => RoomStatus.Available,
         RoomBoardFilter.Occupied => RoomStatus.Occupied,
-        RoomBoardFilter.Cleaning => RoomStatus.Cleaning,
-        RoomBoardFilter.OutOfService => RoomStatus.OutOfService,
+        RoomBoardFilter.Maintenance => RoomStatus.Maintenance,
+        RoomBoardFilter.Inactive => RoomStatus.Inactive,
         _ => null
     };
 }

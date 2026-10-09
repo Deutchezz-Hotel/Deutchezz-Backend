@@ -2,9 +2,9 @@ using Deutchezz.Application.Common;
 
 namespace Deutchezz.Application.Payments;
 
-public record RecordPaymentRequest(Guid BookingId, decimal Amount, string Method, string? Reference);
+public record RecordPaymentRequest(Guid BookingId, decimal Amount, string Method, string? Reference, string? Notes);
 
-public record PaymentResponse(Guid Id, Guid BookingId, decimal Amount, string Method, string? Reference, DateTime CreatedAt, Guid? RecordedByUserId);
+public record PaymentResponse(Guid Id, Guid BookingId, decimal Amount, string Method, string Status, string? Reference, string? Notes, DateTime CreatedAt, Guid? RecordedByUserId);
 
 public class PaymentQuery : QueryParameters
 {

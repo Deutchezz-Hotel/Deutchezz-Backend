@@ -4,7 +4,8 @@ namespace Deutchezz.Domain.Entities;
 
 public class User : Microsoft.AspNetCore.Identity.IdentityUser<Guid>
 {
-    public string? FullName { get; set; }
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime? LastLoginAt { get; set; }
     public string? RefreshTokenHash { get; set; }

@@ -8,9 +8,9 @@ public record UpdateRoomRequest(string? RoomNumber, Guid? RoomTypeId, string? Fl
 
 public record SetRoomStatusRequest(string Status);
 
-public record RoomResponse(Guid Id, string RoomNumber, Guid RoomTypeId, string RoomTypeName, string Status, string? Floor);
+public record RoomResponse(Guid Id, string RoomNumber, Guid RoomTypeId, string RoomTypeName, string Status, string? Floor, bool IsActive);
 
-public enum RoomBoardFilter { All, Available, Occupied, Cleaning, OutOfService }
+public enum RoomBoardFilter { All, Available, Occupied, Maintenance, Inactive }
 
 public class RoomQuery : QueryParameters
 {

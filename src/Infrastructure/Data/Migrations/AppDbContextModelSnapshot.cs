@@ -32,13 +32,10 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("ActorUserId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Details")
+                    b.Property<string>("Description")
                         .HasColumnType("text");
 
                     b.Property<Guid?>("EntityId")
@@ -47,6 +44,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<string>("EntityType")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -58,6 +58,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<int>("Adults")
+                        .HasColumnType("integer");
 
                     b.Property<string>("BookingReference")
                         .IsRequired()
@@ -74,6 +77,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
 
                     b.Property<DateOnly>("CheckOutDate")
                         .HasColumnType("date");
+
+                    b.Property<int>("Children")
+                        .HasColumnType("integer");
 
                     b.Property<byte[]>("ConcurrencyToken")
                         .IsConcurrencyToken()
@@ -93,6 +99,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
 
                     b.Property<string>("PaymentStatus")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SpecialRequests")
                         .HasColumnType("text");
 
                     b.Property<string>("Status")
@@ -119,24 +128,34 @@ namespace Deutchezz.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Deutchezz.Domain.Entities.BookingRoomType", b =>
                 {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("BookingId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("RoomTypeId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("LineTotal")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("NightlyRateSnapshot")
-                        .HasColumnType("decimal(18,2)");
+                    b.Property<int>("NumberOfNights")
+                        .HasColumnType("integer");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");
 
-                    b.HasKey("BookingId", "RoomTypeId");
+                    b.Property<decimal>("RatePerNight")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("RoomTypeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Subtotal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
 
                     b.HasIndex("RoomTypeId");
+
+                    b.HasIndex("BookingId", "RoomTypeId")
+                        .IsUnique();
 
                     b.ToTable("BookingRoomTypes", (string)null);
                 });
@@ -154,11 +173,15 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("FullName")
+                    b.Property<string>("FirstName")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("Phone")
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PhoneNumber")
                         .HasColumnType("text");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -226,6 +249,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -233,6 +259,10 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("Reference")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -285,6 +315,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<string>("Floor")
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -313,10 +346,8 @@ namespace Deutchezz.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Deutchezz.Domain.Entities.RoomAssignment", b =>
                 {
-                    b.Property<Guid>("BookingId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("RoomId")
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("AssignedAt")
@@ -325,10 +356,21 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<Guid?>("AssignedByUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BookingRoomTypeId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("ReleasedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("BookingId", "RoomId");
+                    b.Property<Guid>("RoomId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId", "RoomId");
 
                     b.ToTable("RoomAssignments", (string)null);
                 });
@@ -338,6 +380,12 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<decimal>("BasePrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("BedType")
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -354,15 +402,12 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<int>("MaxOccupancy")
+                    b.Property<int>("MaximumOccupancy")
                         .HasColumnType("integer");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<decimal>("NightlyRate")
-                        .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -398,7 +443,7 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("FullName")
+                    b.Property<string>("FirstName")
                         .HasColumnType("text");
 
                     b.Property<bool>("IsActive")
@@ -409,6 +454,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
 
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastName")
+                        .HasColumnType("text");
 
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("boolean");

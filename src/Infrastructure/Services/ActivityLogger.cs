@@ -9,11 +9,11 @@ public class ActivityLogger(Deutchezz.Application.Data.IAppDbContext context) : 
     {
         context.ActivityLogs.Add(new Domain.Entities.ActivityLog
         {
-            ActorUserId = actorUserId,
+            UserId = actorUserId,
             Action = action,
             EntityType = entityType,
             EntityId = entityId,
-            Details = details,
+            Description = details,
             CreatedAt = DateTime.UtcNow
         });
         await context.SaveChangesAsync(cancellationToken);
