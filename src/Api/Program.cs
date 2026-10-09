@@ -5,6 +5,7 @@ using Deutchezz.Infrastructure.Seeders;
 using Deutchezz.Api.Extensions;
 using Asp.Versioning;
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -40,6 +41,7 @@ app.Services.ValidateRequiredOptions();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 if (!app.Environment.IsProduction())
