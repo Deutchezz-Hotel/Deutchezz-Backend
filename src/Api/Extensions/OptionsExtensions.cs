@@ -41,6 +41,33 @@ public static class OptionsExtensions
             .Validate(o => o.WindowHours > 0, "Cancellation:WindowHours must be greater than 0.")
             .ValidateOnStart();
 
+        services.AddOptions<SettingsOptions>()
+            .Bind(configuration.GetSection(SettingsOptions.SectionName))
+            .Validate(o => o.MaxRoomsPerBooking >= 1 && o.MaxRoomsPerBooking <= 1000,
+                "Settings:MaxRoomsPerBooking must be between 1 and 1000.")
+            .Validate(o => TimeOnly.TryParse(o.CheckInTime, out _), "Settings:CheckInTime must be a time such as 14:00.")
+            .Validate(o => TimeOnly.TryParse(o.CheckOutTime, out _), "Settings:CheckOutTime must be a time such as 12:00.")
+            .ValidateOnStart();
+
+        services.AddOptions<CorsOptions>()
+            .Bind(configuration.GetSection(CorsOptions.SectionName))
+            .Validate(
+                o => o.AllowedOrigins.Length > 0 && o.AllowedOrigins.All(origin => Uri.TryCreate(origin, UriKind.Absolute, out _)),
+                "Cors:AllowedOrigins must be a non-empty list of origins such as http://localhost:5173.")
+            .ValidateOnStart();
+
+        services.AddOptions<RateLimitingOptions>()
+            .Bind(configuration.GetSection(RateLimitingOptions.SectionName))
+            .Validate(o => o.Auth.PermitLimit > 0 && o.Auth.WindowSeconds > 0, "RateLimiting:Auth PermitLimit/WindowSeconds must be positive.")
+            .Validate(o => o.Lookup.PermitLimit > 0 && o.Lookup.WindowSeconds > 0, "RateLimiting:Lookup PermitLimit/WindowSeconds must be positive.")
+            .Validate(o => o.BookingCreate.PermitLimit > 0 && o.BookingCreate.WindowSeconds > 0, "RateLimiting:BookingCreate PermitLimit/WindowSeconds must be positive.")
+            .ValidateOnStart();
+
+        services.AddOptions<EmailOptions>()
+            .Bind(configuration.GetSection(EmailOptions.SectionName))
+            .Validate(o => o.Smtp.Port > 0 && o.Smtp.Port <= 65535, "Email:Smtp:Port must be a valid TCP port.")
+            .ValidateOnStart();
+
         return services;
     }
 
@@ -55,5 +82,9 @@ public static class OptionsExtensions
         _ = services.GetRequiredService<IOptions<JwtOptions>>().Value;
         _ = services.GetRequiredService<IOptions<SeedOptions>>().Value;
         _ = services.GetRequiredService<IOptions<CancellationOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<SettingsOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<CorsOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<RateLimitingOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<EmailOptions>>().Value;
     }
 }

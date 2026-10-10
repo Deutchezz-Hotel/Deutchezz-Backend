@@ -155,6 +155,7 @@ public class BookingService(
         _ = emailSender.SendAsync(request.Guest.Email,
             $"Booking received {booking.BookingReference}",
             $"Your booking {booking.BookingReference} has been received. Check-in: {request.CheckInDate:yyyy-MM-dd}.",
+            null,
             CancellationToken.None);
 
         var response = await MapAsync(booking.Id, cancellationToken);

@@ -2,13 +2,13 @@ using Deutchezz.Application.Abstractions;
 
 namespace Deutchezz.Infrastructure.Services;
 
-public class BusinessClock : IBusinessClock
+public class BusinessClock(TimeProvider timeProvider) : IBusinessClock
 {
     private readonly TimeZoneInfo _timeZone = ResolveTimeZone();
 
-    public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+    public DateTimeOffset UtcNow => timeProvider.GetUtcNow();
 
-    public DateOnly Today => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, _timeZone).Date);
+    public DateOnly Today => ToLocalDate(UtcNow);
 
     public DateTimeOffset ConvertFromUtc(DateTimeOffset utc) => TimeZoneInfo.ConvertTime(utc, _timeZone);
 

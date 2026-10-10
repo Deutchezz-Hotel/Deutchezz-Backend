@@ -66,12 +66,23 @@ public static class DependencyInjection
         services.AddAuthorization();
 
         services.AddScoped<IClock, SystemClock>();
+        services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IBusinessClock, BusinessClock>();
+        services.AddSingleton<ISettingsProvider, AppSettingsProvider>();
         services.AddScoped<IBookingReferenceGenerator, BookingReferenceGenerator>();
-        services.AddScoped<IEmailSender, EmailSender>();
         services.AddScoped<IDbConflictDetector, NpgsqlConflictDetector>();
         services.AddScoped<IActivityLogger, ActivityLogger>();
         services.AddScoped<ITokenService, TokenService>();
+
+        services.AddScoped<SmtpEmailSender>();
+        services.AddScoped<LoggingEmailSender>();
+        services.AddScoped<IEmailSender>(serviceProvider =>
+        {
+            var email = serviceProvider.GetRequiredService<IOptions<EmailOptions>>().Value;
+            return email.Smtp.HasCredentials && !string.IsNullOrWhiteSpace(email.Smtp.FromAddress)
+                ? serviceProvider.GetRequiredService<SmtpEmailSender>()
+                : serviceProvider.GetRequiredService<LoggingEmailSender>();
+        });
 
         return services;
     }

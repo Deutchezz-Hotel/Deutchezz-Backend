@@ -6,11 +6,17 @@ using Deutchezz.Api.Extensions;
 using Deutchezz.Api;
 using Deutchezz.Api.Authorization;
 using Deutchezz.Api.OpenApi;
+using Deutchezz.Application.Common.Options;
 using Deutchezz.Domain.Constants;
 using Asp.Versioning;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,6 +38,65 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(Policies.AdminOnly, policy => policy.RequireRole(Roles.Administrator));
     options.AddPolicy(Policies.StaffOnly, policy => policy.RequireRole(Roles.Receptionist, Roles.Administrator));
     options.AddPolicy(Policies.CustomerOnly, policy => policy.RequireRole(Roles.Customer));
+});
+
+builder.Services.AddCors(options =>
+{
+    var allowedOrigins = builder.Configuration.GetSection(CorsOptions.SectionName)
+        .Get<CorsOptions>()?.AllowedOrigins
+        ?? new[] { "http://localhost:5173", "http://localhost:3000" };
+
+    options.AddPolicy("Frontend", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
+var problemJsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.ContentType = "application/problem+json";
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new ProblemDetails
+            {
+                Status = StatusCodes.Status429TooManyRequests,
+                Title = "Too many requests",
+                Type = "https://httpstatuses.com/429",
+                Detail = "Too many requests. Please try again later."
+            },
+            problemJsonOptions,
+            cancellationToken);
+    };
+
+    options.AddPolicy("auth", context =>
+        FixedWindowPartition(context, p => p.Auth.PermitLimit, p => p.Auth.WindowSeconds));
+    options.AddPolicy("lookup", context =>
+        FixedWindowPartition(context, p => p.Lookup.PermitLimit, p => p.Lookup.WindowSeconds));
+    options.AddPolicy("booking-create", context =>
+        FixedWindowPartition(context, p => p.BookingCreate.PermitLimit, p => p.BookingCreate.WindowSeconds));
+
+    static RateLimitPartition<string> FixedWindowPartition(
+        HttpContext context,
+        Func<RateLimitingOptions, int> permitLimit,
+        Func<RateLimitingOptions, int> windowSeconds)
+    {
+        var settings = context.RequestServices.GetRequiredService<IOptions<RateLimitingOptions>>().Value;
+        var key = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = permitLimit(settings),
+            Window = TimeSpan.FromSeconds(windowSeconds(settings)),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+    }
 });
 
 builder.Services.AddValidatedOptions(builder.Configuration);
@@ -81,6 +146,8 @@ if (!app.Environment.IsProduction())
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
+app.UseCors("Frontend");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
