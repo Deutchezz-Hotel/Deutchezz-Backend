@@ -11,5 +11,6 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.ToTable("Payments");
         builder.Property(p => p.Amount).HasColumnType("decimal(18,2)");
         builder.Property(p => p.Method).HasConversion<string>();
+        builder.Property(p => p.Status).HasConversion<string>();
     }
 }

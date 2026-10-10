@@ -2,12 +2,12 @@ using Deutchezz.Application.Common;
 
 namespace Deutchezz.Application.RoomTypes;
 
-public record CreateRoomTypeRequest(string Name, string? Description, decimal NightlyRate, int MaxOccupancy);
+public record CreateRoomTypeRequest(string Name, string? Description, decimal BasePrice, int MaximumOccupancy, string? BedType);
 
-public record UpdateRoomTypeRequest(string? Name, string? Description, decimal? NightlyRate, int? MaxOccupancy);
+public record UpdateRoomTypeRequest(string? Name, string? Description, decimal? BasePrice, int? MaximumOccupancy, string? BedType);
 
 public record RoomTypeResponse(
-    Guid Id, string Name, string? Description, decimal NightlyRate, int MaxOccupancy, bool IsActive);
+    Guid Id, string Name, string? Description, decimal BasePrice, int MaximumOccupancy, string? BedType, bool IsActive);
 
 public class RoomTypeQuery : QueryParameters
 {

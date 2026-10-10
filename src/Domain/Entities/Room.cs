@@ -9,4 +9,5 @@ public class Room : SoftDeletableEntity
     public Guid RoomTypeId { get; set; }
     public RoomStatus Status { get; set; } = RoomStatus.Available;
     public string? Floor { get; set; }
+    public bool IsActive { get; set; } = true;
 }

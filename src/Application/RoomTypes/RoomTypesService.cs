@@ -19,10 +19,10 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
 
         var total = await q.CountAsync(cancellationToken);
         var items = await q
-            .OrderBy(rt => rt.NightlyRate)
+            .OrderBy(rt => rt.BasePrice)
             .Skip((query.PageNumber - 1) * query.PageSize)
             .Take(query.PageSize)
-            .Select(rt => new RoomTypeResponse(rt.Id, rt.Name, rt.Description, rt.NightlyRate, rt.MaxOccupancy, rt.IsActive))
+            .Select(rt => new RoomTypeResponse(rt.Id, rt.Name, rt.Description, rt.BasePrice, rt.MaximumOccupancy, rt.BedType, rt.IsActive))
             .ToListAsync(cancellationToken);
 
         return new PaginatedResult<RoomTypeResponse>(items, total, query.PageNumber, query.PageSize);
@@ -34,16 +34,16 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
         if (roomType is null)
             return Error.NotFound("roomtype.not_found", "Room type not found");
 
-        return new RoomTypeResponse(roomType.Id, roomType.Name, roomType.Description, roomType.NightlyRate, roomType.MaxOccupancy, roomType.IsActive);
+        return new RoomTypeResponse(roomType.Id, roomType.Name, roomType.Description, roomType.BasePrice, roomType.MaximumOccupancy, roomType.BedType, roomType.IsActive);
     }
 
     public async Task<Result<RoomTypeResponse>> CreateAsync(CreateRoomTypeRequest request, Guid adminUserId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
             return Error.Validation("roomtype.name_required", "Name is required");
-        if (request.NightlyRate <= 0)
-            return Error.Validation("roomtype.invalid_rate", "Nightly rate must be positive");
-        if (request.MaxOccupancy < 1)
+        if (request.BasePrice <= 0)
+            return Error.Validation("roomtype.invalid_rate", "Base price must be positive");
+        if (request.MaximumOccupancy < 1)
             return Error.Validation("roomtype.invalid_occupancy", "Maximum occupancy must be at least 1");
 
         var duplicate = await db.RoomTypes.FirstOrDefaultAsync(rt => rt.Name == request.Name, cancellationToken);
@@ -54,17 +54,18 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
         {
             Name = request.Name,
             Description = request.Description,
-            NightlyRate = request.NightlyRate,
-            MaxOccupancy = request.MaxOccupancy,
+            BasePrice = request.BasePrice,
+            MaximumOccupancy = request.MaximumOccupancy,
+            BedType = request.BedType,
             IsActive = true
         };
         db.RoomTypes.Add(roomType);
         await db.SaveChangesAsync(cancellationToken);
 
         await activityLogger.LogAsync(adminUserId, "roomtype.created", "RoomType", roomType.Id,
-            $"Created room type '{roomType.Name}' at {roomType.NightlyRate}", cancellationToken);
+            $"Created room type '{roomType.Name}' at {roomType.BasePrice}", cancellationToken);
 
-        return new RoomTypeResponse(roomType.Id, roomType.Name, roomType.Description, roomType.NightlyRate, roomType.MaxOccupancy, roomType.IsActive);
+        return new RoomTypeResponse(roomType.Id, roomType.Name, roomType.Description, roomType.BasePrice, roomType.MaximumOccupancy, roomType.BedType, roomType.IsActive);
     }
 
     public async Task<Result<RoomTypeResponse>> UpdateAsync(Guid id, UpdateRoomTypeRequest request, Guid adminUserId, CancellationToken cancellationToken)
@@ -87,17 +88,20 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
             roomType.Description = request.Description;
 
         // Changing a rate never touches existing BookingRoomType snapshots.
-        if (request.NightlyRate is > 0)
-            roomType.NightlyRate = request.NightlyRate.Value;
+        if (request.BasePrice is > 0)
+            roomType.BasePrice = request.BasePrice.Value;
 
-        if (request.MaxOccupancy is > 0)
-            roomType.MaxOccupancy = request.MaxOccupancy.Value;
+        if (request.MaximumOccupancy is > 0)
+            roomType.MaximumOccupancy = request.MaximumOccupancy.Value;
+
+        if (request.BedType is not null)
+            roomType.BedType = request.BedType;
 
         await db.SaveChangesAsync(cancellationToken);
 
         await activityLogger.LogAsync(adminUserId, "roomtype.updated", "RoomType", roomType.Id, "Updated room type", cancellationToken);
 
-        return new RoomTypeResponse(roomType.Id, roomType.Name, roomType.Description, roomType.NightlyRate, roomType.MaxOccupancy, roomType.IsActive);
+        return new RoomTypeResponse(roomType.Id, roomType.Name, roomType.Description, roomType.BasePrice, roomType.MaximumOccupancy, roomType.BedType, roomType.IsActive);
     }
 
     public async Task<Result> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken)

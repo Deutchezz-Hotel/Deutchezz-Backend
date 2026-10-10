@@ -2,32 +2,39 @@ using Deutchezz.Application.Common;
 
 namespace Deutchezz.Application.Bookings;
 
-public record GuestInfoRequest(string FullName, string Email, string? Phone);
+public record GuestInfoRequest(string FirstName, string LastName, string Email, string? PhoneNumber);
 
 public record BookingRoomRequest(Guid RoomTypeId, int Quantity);
 
 public record CreateBookingRequest(
     DateOnly CheckInDate,
     DateOnly CheckOutDate,
+    int Adults,
+    int Children,
     GuestInfoRequest Guest,
-    List<BookingRoomRequest> Rooms);
+    List<BookingRoomRequest> Rooms,
+    string? SpecialRequests);
 
 public record BookingLookupRequest(string BookingReference, string Email);
 
 public record CancelBookingRequest(string? Reason);
 
-public record RoomAssignmentRequest(List<Guid> RoomIds);
+public record RoomAssignmentLineRequest(Guid BookingRoomTypeId, Guid RoomId);
 
-public record CheckInRequest(RoomAssignmentRequest? Assignments);
+public record RoomAssignmentRequest(List<RoomAssignmentLineRequest> Assignments);
+
+public record CheckInRequest();
 
 public record CheckOutRequest();
 
 public record BookingRoomTypeLineResponse(
+    Guid Id,
     Guid RoomTypeId,
     string RoomTypeName,
     int Quantity,
-    decimal NightlyRateSnapshot,
-    decimal LineTotal);
+    decimal RatePerNight,
+    int NumberOfNights,
+    decimal Subtotal);
 
 public record AssignmentResponse(Guid RoomId, string RoomNumber, DateTime AssignedAt, DateTime? ReleasedAt);
 
@@ -41,6 +48,9 @@ public record BookingResponse(
     DateOnly CheckInDate,
     DateOnly CheckOutDate,
     int Nights,
+    int Adults,
+    int Children,
+    string? SpecialRequests,
     string Status,
     string PaymentStatus,
     decimal TotalAmount,

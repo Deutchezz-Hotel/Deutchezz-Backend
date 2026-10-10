@@ -9,9 +9,10 @@ public class BookingRoomTypeConfiguration : IEntityTypeConfiguration<BookingRoom
     public void Configure(EntityTypeBuilder<BookingRoomType> builder)
     {
         builder.ToTable("BookingRoomTypes");
-        builder.HasKey(brt => new { brt.BookingId, brt.RoomTypeId });
-        builder.Property(brt => brt.NightlyRateSnapshot).HasColumnType("decimal(18,2)");
-        builder.Property(brt => brt.LineTotal).HasColumnType("decimal(18,2)");
+        builder.HasKey(brt => brt.Id);
+        builder.Property(brt => brt.RatePerNight).HasColumnType("decimal(18,2)");
+        builder.Property(brt => brt.Subtotal).HasColumnType("decimal(18,2)");
+        builder.HasIndex(brt => new { brt.BookingId, brt.RoomTypeId }).IsUnique();
         builder.HasIndex(brt => brt.RoomTypeId);
     }
 }

@@ -2,8 +2,9 @@ namespace Deutchezz.Domain.Enums;
 
 public enum PaymentStatus
 {
-    Unpaid,
+    Pending,
     PartiallyPaid,
     Paid,
-    Refunded
+    Refunded,
+    Failed
 }

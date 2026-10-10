@@ -2,9 +2,9 @@ namespace Deutchezz.Domain.Enums;
 
 public enum NotificationType
 {
-    BookingConfirmation,
-    BookingCancelled,
-    CheckInReminder,
+    BookingConfirmed,
     PaymentReceived,
-    System
+    BookingCancelled,
+    CheckInCompleted,
+    CheckOutCompleted
 }

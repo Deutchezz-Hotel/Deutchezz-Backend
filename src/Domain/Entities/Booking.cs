@@ -11,8 +11,11 @@ public class Booking : AuditableEntity
     public DateOnly CheckInDate { get; set; }
     public DateOnly CheckOutDate { get; set; }
     public int Nights { get; set; }
-    public BookingStatus Status { get; set; } = BookingStatus.Confirmed;
-    public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Unpaid;
+    public int Adults { get; set; }
+    public int Children { get; set; }
+    public BookingStatus Status { get; set; } = BookingStatus.Pending;
+    public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Pending;
+    public string? SpecialRequests { get; set; }
     public decimal TotalAmount { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }

@@ -16,7 +16,7 @@ public class AuthService(
     IAppDbContext db,
     IActivityLogger activityLogger) : IAuthService
 {
-    public async Task<Result<AuthResult>> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken)
+    public async Task<Result<LoginResponse>> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
             return Error.Validation("auth.invalid_input", "Email and password are required");
@@ -29,8 +29,9 @@ public class AuthService(
         {
             UserName = request.Email,
             Email = request.Email,
-            FullName = request.FullName,
-            PhoneNumber = request.Phone,
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            PhoneNumber = request.PhoneNumber,
             EmailConfirmed = true,
             RefreshTokenHash = null,
             RefreshTokenExpiresAt = null
@@ -41,7 +42,7 @@ public class AuthService(
             return Error.Validation("auth.registration_failed",
                 string.Join(", ", result.Errors.Select(e => e.Description)));
 
-        await userManager.AddToRoleAsync(user, nameof(UserRole.Guest));
+        await userManager.AddToRoleAsync(user, nameof(UserRole.Customer));
 
         await activityLogger.LogAsync(user.Id, "user.registered", "User", user.Id,
             $"Registered {request.Email}", cancellationToken);
@@ -50,7 +51,7 @@ public class AuthService(
         return auth;
     }
 
-    public async Task<Result<AuthResult>> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
+    public async Task<Result<LoginResponse>> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByEmailAsync(request.Email);
         if (user is null || !await userManager.CheckPasswordAsync(user, request.Password))
@@ -67,10 +68,10 @@ public class AuthService(
         return await IssueTokensAsync(user, cancellationToken);
     }
 
-    public async Task<Result<AuthResult>> RefreshAsync(string currentRefreshToken, CancellationToken cancellationToken)
+    public async Task<Result<LoginResponse>> RefreshAsync(string currentRefreshToken, CancellationToken cancellationToken)
     {
         var result = await tokenService.RotateRefreshTokenAsync(currentRefreshToken, cancellationToken);
-        return new AuthResult(result.accessToken, result.refreshToken, result.expiresAt, string.Empty);
+        return new LoginResponse(result.accessToken, result.refreshToken, result.expiresAt, string.Empty);
     }
 
     public async Task<Result> LogoutAsync(Guid userId, CancellationToken cancellationToken)
@@ -92,12 +93,12 @@ public class AuthService(
             return Error.NotFound("auth.user_not_found", "User not found");
 
         var roles = await userManager.GetRolesAsync(user);
-        var role = roles.FirstOrDefault() ?? nameof(UserRole.Guest);
+        var role = roles.FirstOrDefault() ?? nameof(UserRole.Customer);
 
-        return new CurrentUserResponse(user.Id, user.FullName ?? user.Email ?? "", user.Email ?? "", role);
+        return new CurrentUserResponse(user.Id, user.FirstName ?? "", user.LastName ?? "", user.Email ?? "", role);
     }
 
-    private async Task<Result<AuthResult>> IssueTokensAsync(User user, CancellationToken cancellationToken)
+    private async Task<Result<LoginResponse>> IssueTokensAsync(User user, CancellationToken cancellationToken)
     {
         var roles = await userManager.GetRolesAsync(user);
         var (accessToken, expiresAt) = tokenService.GenerateAccessToken(user.Id, roles);
@@ -107,7 +108,7 @@ public class AuthService(
         user.RefreshTokenExpiresAt = DateTime.UtcNow.AddDays(7);
         await db.SaveChangesAsync(cancellationToken);
 
-        return new AuthResult(accessToken, refreshToken, expiresAt, roles.FirstOrDefault() ?? nameof(UserRole.Guest));
+        return new LoginResponse(accessToken, refreshToken, expiresAt, roles.FirstOrDefault() ?? nameof(UserRole.Customer));
     }
 
     private static string HashToken(string token)

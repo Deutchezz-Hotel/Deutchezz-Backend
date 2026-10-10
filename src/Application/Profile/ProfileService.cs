@@ -12,7 +12,7 @@ public class ProfileService(IAppDbContext db) : IProfileService
         if (user is null)
             return Error.NotFound("profile.user_not_found", "User not found");
 
-        return new ProfileResponse(user.Id, user.FullName ?? "", user.Email ?? "", user.PhoneNumber);
+        return new ProfileResponse(user.Id, user.FirstName ?? "", user.LastName ?? "", user.Email ?? "", user.PhoneNumber);
     }
 
     public async Task<Result<ProfileResponse>> UpdateAsync(Guid userId, UpdateProfileRequest request, CancellationToken cancellationToken)
@@ -21,13 +21,15 @@ public class ProfileService(IAppDbContext db) : IProfileService
         if (user is null)
             return Error.NotFound("profile.user_not_found", "User not found");
 
-        if (request.FullName is not null)
-            user.FullName = request.FullName;
-        if (request.Phone is not null)
-            user.PhoneNumber = request.Phone;
+        if (request.FirstName is not null)
+            user.FirstName = request.FirstName;
+        if (request.LastName is not null)
+            user.LastName = request.LastName;
+        if (request.PhoneNumber is not null)
+            user.PhoneNumber = request.PhoneNumber;
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return new ProfileResponse(user.Id, user.FullName ?? "", user.Email ?? "", user.PhoneNumber);
+        return new ProfileResponse(user.Id, user.FirstName ?? "", user.LastName ?? "", user.Email ?? "", user.PhoneNumber);
     }
 }

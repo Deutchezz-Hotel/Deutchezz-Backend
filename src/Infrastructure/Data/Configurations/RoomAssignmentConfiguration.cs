@@ -9,6 +9,7 @@ public class RoomAssignmentConfiguration : IEntityTypeConfiguration<RoomAssignme
     public void Configure(EntityTypeBuilder<RoomAssignment> builder)
     {
         builder.ToTable("RoomAssignments");
-        builder.HasKey(ra => new { ra.BookingId, ra.RoomId });
+        builder.HasKey(ra => ra.Id);
+        builder.HasIndex(ra => new { ra.BookingId, ra.RoomId });
     }
 }

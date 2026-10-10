@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Deutchezz.Api.Controllers;
 
 [ApiController]
-[Route("api/v1/[controller]")]
+[Route("api/v1/room-types")]
 public class RoomTypesController(IRoomTypesService service) : ControllerBase
 {
     [HttpGet]

@@ -10,7 +10,7 @@ namespace Deutchezz.Infrastructure.Seeders;
 
 public static class Seeder
 {
-    private static readonly string[] RoleNames = ["Admin", "Receptionist", "Guest"];
+    private static readonly string[] RoleNames = ["Administrator", "Receptionist", "Customer"];
 
     public static async Task SeedRolesAsync(this IServiceProvider services)
     {
@@ -50,14 +50,15 @@ public static class Seeder
         {
             UserName = seed.AdminEmail,
             Email = seed.AdminEmail,
-            FullName = "Administrator",
+            FirstName = "Hotel",
+            LastName = "Administrator",
             EmailConfirmed = true
         };
 
         var result = await userManager.CreateAsync(admin, seed.AdminPassword);
         if (result.Succeeded)
         {
-            await userManager.AddToRoleAsync(admin, "Admin");
+            await userManager.AddToRoleAsync(admin, "Administrator");
             logger.LogInformation("Seeded admin user {Email}", seed.AdminEmail);
         }
         else
@@ -83,23 +84,26 @@ public static class Seeder
         {
             Name = "Deluxe",
             Description = "Deluxe room",
-            NightlyRate = 30000m,
-            MaxOccupancy = 2
+            BasePrice = 30000m,
+            MaximumOccupancy = 2,
+            BedType = "Queen"
         };
         // TODO: Confirm the second and third room type names with the hotel; only "Deluxe" is confirmed.
         var placeholderTwo = new RoomType
         {
             Name = "Standard", // TODO: placeholder name - not confirmed
             Description = "Placeholder room type (name pending confirmation)",
-            NightlyRate = 40000m,
-            MaxOccupancy = 3
+            BasePrice = 40000m,
+            MaximumOccupancy = 3,
+            BedType = "Queen"
         };
         var placeholderThree = new RoomType
         {
             Name = "Executive", // TODO: placeholder name - not confirmed
             Description = "Placeholder room type (name pending confirmation)",
-            NightlyRate = 55000m,
-            MaxOccupancy = 4
+            BasePrice = 55000m,
+            MaximumOccupancy = 4,
+            BedType = "King"
         };
 
         context.RoomTypes.AddRange(deluxe, placeholderTwo, placeholderThree);

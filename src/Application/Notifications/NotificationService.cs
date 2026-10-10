@@ -9,7 +9,7 @@ public class NotificationService(IAppDbContext db) : INotificationService
 {
     public async Task<Result<PaginatedResult<NotificationResponse>>> ListAsync(Guid userId, NotificationQuery query, CancellationToken cancellationToken)
     {
-        var q = db.Notifications.Where(n => n.UserId == userId || n.GuestId != null && false);
+        var q = db.Notifications.Where(n => n.UserId == userId);
 
         if (query.IsRead is not null)
             q = q.Where(n => n.IsRead == query.IsRead);
