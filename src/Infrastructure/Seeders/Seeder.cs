@@ -80,43 +80,62 @@ public static class Seeder
             return;
         }
 
+        var standard = new RoomType
+        {
+            Name = "Standard",
+            Description = "Comfortable standard room for single or double occupancy.",
+            BasePrice = 30000m,
+            MaximumOccupancy = 2,
+            BedType = "Queen",
+            ImageUrls =
+            [
+                "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800",
+                "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800"
+            ],
+            Features = ["Air conditioning", "Wi-Fi", "Smart TV", "Private bathroom"]
+        };
         var deluxe = new RoomType
         {
             Name = "Deluxe",
-            Description = "Deluxe room",
-            BasePrice = 30000m,
-            MaximumOccupancy = 2,
-            BedType = "Queen"
-        };
-        // TODO: Confirm the second and third room type names with the hotel; only "Deluxe" is confirmed.
-        var placeholderTwo = new RoomType
-        {
-            Name = "Standard", // TODO: placeholder name - not confirmed
-            Description = "Placeholder room type (name pending confirmation)",
+            Description = "Spacious deluxe room with added comfort.",
             BasePrice = 40000m,
             MaximumOccupancy = 3,
-            BedType = "Queen"
+            BedType = "King",
+            ImageUrls =
+            [
+                "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
+                "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800"
+            ],
+            Features = ["Air conditioning", "Wi-Fi", "Smart TV", "Private bathroom", "Work desk"]
         };
-        var placeholderThree = new RoomType
+        var executive = new RoomType
         {
-            Name = "Executive", // TODO: placeholder name - not confirmed
-            Description = "Placeholder room type (name pending confirmation)",
+            Name = "Executive",
+            Description = "Premium executive room with lounge seating.",
             BasePrice = 55000m,
             MaximumOccupancy = 4,
-            BedType = "King"
+            BedType = "King",
+            ImageUrls =
+            [
+                "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800",
+                "https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800"
+            ],
+            Features = ["Air conditioning", "Wi-Fi", "Smart TV", "Private bathroom", "Work desk", "Lounge seating"]
         };
 
-        context.RoomTypes.AddRange(deluxe, placeholderTwo, placeholderThree);
+        // The seed only creates missing rows and never updates existing ones, so later
+        // admin edits survive restarts. Prices are per night in NGN.
+        context.RoomTypes.AddRange(standard, deluxe, executive);
         await context.SaveChangesAsync();
 
-        // 20 sample rooms total
+        // 20 sample rooms total: 8 Standard, 7 Deluxe, 5 Executive (sample inventory).
         var rooms = new List<Room>();
-        for (var i = 1; i <= 8; i++) rooms.Add(new Room { RoomNumber = $"1{i:00}", RoomTypeId = deluxe.Id, Floor = "1" });
-        for (var i = 1; i <= 7; i++) rooms.Add(new Room { RoomNumber = $"2{i:00}", RoomTypeId = placeholderTwo.Id, Floor = "2" });
-        for (var i = 1; i <= 5; i++) rooms.Add(new Room { RoomNumber = $"3{i:00}", RoomTypeId = placeholderThree.Id, Floor = "3" });
+        for (var i = 1; i <= 8; i++) rooms.Add(new Room { RoomNumber = $"1{i:00}", RoomTypeId = standard.Id, Floor = "1" });
+        for (var i = 1; i <= 7; i++) rooms.Add(new Room { RoomNumber = $"2{i:00}", RoomTypeId = deluxe.Id, Floor = "2" });
+        for (var i = 1; i <= 5; i++) rooms.Add(new Room { RoomNumber = $"3{i:00}", RoomTypeId = executive.Id, Floor = "3" });
 
         context.Rooms.AddRange(rooms);
         await context.SaveChangesAsync();
-        logger.LogInformation("Seeded 3 room types and 20 rooms (sample inventory)");
+        logger.LogInformation("Seeded 3 room types (Standard 30000, Deluxe 40000, Executive 55000 per night) and 20 rooms (sample inventory)");
     }
 }

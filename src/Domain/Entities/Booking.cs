@@ -20,5 +20,7 @@ public class Booking : AuditableEntity
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
     public Guid? CreatedByUserId { get; set; }
+    public string? IdempotencyKey { get; set; }
+    public string? IdempotencyRequestHash { get; set; }
     public byte[]? ConcurrencyToken { get; set; }
 }

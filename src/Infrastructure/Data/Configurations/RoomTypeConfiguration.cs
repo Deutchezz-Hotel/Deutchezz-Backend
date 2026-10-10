@@ -10,6 +10,8 @@ public class RoomTypeConfiguration : IEntityTypeConfiguration<RoomType>
     {
         builder.ToTable("RoomTypes");
         builder.Property(rt => rt.BasePrice).HasColumnType("decimal(18,2)");
-        builder.Property(rt => rt.Name).IsRequired();
+        builder.Property(rt => rt.Name).IsRequired().HasMaxLength(100);
+        builder.PrimitiveCollection(rt => rt.ImageUrls);
+        builder.PrimitiveCollection(rt => rt.Features);
     }
 }

@@ -1,27 +1,34 @@
 DEUTCHEZZ HOTEL BACKEND - CONTINUATION / SOURCE OF TRUTH (IMPLEMENTATION TRACKER)
 =================================================================================
-Last updated: 2026-10-09
-Companion document: "Deut_Source of Truth.txt" (v1.0) = the design baseline.
+Last updated: 2026-10-10
+Companion document: "Deut_Source of Truth.txt" (v1.0, archived baseline) and
+docs/source-of-truth/SOURCE_OF_TRUTH.md (v1.1 = current, authoritative).
 Governance: where this file and the Source of Truth (SoT) disagree, the SoT wins.
 Update the SoT first for any business/architectural change, then this file.
 
-Branch: feature/reconcile-source-of-truth
-Prior: feature/foundation-config (foundation + Scalar)
+Branch: feature/reconcile-source-of-truth (recreated from main after earlier PR merge)
+Prior: main = "Merge pull request #1 (feature/reconcile-source-of-truth)"
 
 
-0. GROUND TRUTH (verified 2026-10-09)
+0. GROUND TRUTH (verified 2026-10-10)
 -------------------------------------
 - One project: src/Deutchezz.csproj (Web SDK), layers Api/Application/Domain/Infrastructure.
 - Solution: Deutchezz.sln (src + tests/Deutchezz.ArchitectureTests).
 - Framework: .NET 9, EF Core 9 (PostgreSQL), ASP.NET Identity + JWT, Asp.Versioning, Scalar.
 - Database: local PostgreSQL 18, database deutchezz_dev.
-- Seeding idempotent: 3 roles (Administrator/Receptionist/Customer), 1 admin, 3 room types, 20 rooms.
+- Migration: 20261010025330_InitialCreate, regenerated once under Wave 0 (do NOT regenerate again;
+  later schema changes are new incremental migrations).
+- Seeding idempotent and verified by running the app twice:
+  3 roles (Administrator/Receptionist/Customer), 1 admin, 3 room types:
+  Standard 30000, Deluxe 40000, Executive 55000 (NGN per night) + ImageUrls/Features.
+  20 rooms: 8 Standard (101-108), 7 Deluxe (201-207), 5 Executive (301-305). Seeding never updates.
 - Scalar UI (Development only): http://localhost:5144/scalar/v1  (OpenAPI: /openapi/v1.json)
 - Run locally: dotnet run --project src --launch-profile http
 - Secrets only in dotnet user-secrets. Never in git.
 - Global exception handling: GlobalExceptionHandler (ProblemDetails, 500) registered in Program.
+- Booking reference format (SoT v1.1): DHI-<yyyy>-<XXXXXX>, Africa/Lagos year, alphabet without 0/O/1/I/L.
 
-RECONCILIATION APPLIED (this branch) - code now matches SoT v1.0:
+RECONCILIATION APPLIED (v1.0 baseline, this branch):
   + Enums aligned: UserRole(Customer/Receptionist/Administrator),
     RoomStatus(Available/Occupied/Maintenance/Inactive),
     BookingStatus(Pending/Confirmed/CheckedIn/CheckedOut/Cancelled),
@@ -30,14 +37,11 @@ RECONCILIATION APPLIED (this branch) - code now matches SoT v1.0:
     NotificationType(BookingConfirmed/PaymentReceived/BookingCancelled/CheckInCompleted/CheckOutCompleted).
   + Entity fields aligned: Guest(FirstName/LastName/PhoneNumber), User(FirstName/LastName),
     RoomType(BasePrice/MaximumOccupancy/BedType), Room(IsActive),
-    Booking(Adults/Children/SpecialRequests, starts Pending),
+    Booking(Adults/Children/SpecialRequests/TotalAmount, starts Pending per SoT; created Confirmed per v1.1),
     BookingRoomType(RatePerNight/NumberOfNights/Subtotal, own Id),
-    Payment(Status/Notes), RoomAssignment(BookingRoomTypeId, own Id),
-    ActivityLog(UserId/Description).
-  + Public route fixed: /api/v1/room-types (was /roomtypes).
-  + Availability: POST search takes adults/children/rooms; calendar endpoint REMOVED (not in SoT).
-  + Bookings: assign-rooms and check-in split into separate operations; NoShow REMOVED (SoT deferred).
-  + Roles seeded as Administrator/Receptionist/Customer.
+    Payment(Status/Notes), RoomAssignment(BookingRoomTypeId, own Id), ActivityLog(UserId nullable).
+  + Public route: /api/v1/room-types. Availability: POST search; calendar endpoint REMOVED (not in SoT).
+  + Bookings: assign-rooms and check-in split; NoShow REMOVED.
 
 
 1. ENTITY STATUS (matches SoT section 5)
@@ -45,6 +49,8 @@ RECONCILIATION APPLIED (this branch) - code now matches SoT v1.0:
 [DONE] BaseEntity / AuditableEntity / SoftDeletableEntity
 [DONE] User, Guest, RoomType, Room, Booking, BookingRoomType, RoomAssignment, Payment,
        Notification, ActivityLog
+[DONE] Booking.IdempotencyKey (unique, nullable) + IdempotencyRequestHash (SoT v1.1)
+[DONE] RoomType.ImageUrls (<=8) + RoomType.Features (<=20) as text[] (SoT v1.1)
 NOTE: User.Role is represented by ASP.NET Identity role membership (role claim), not a column.
 NOTE: Guest/RoomType/Room retain soft-delete support in addition to SoT fields.
 
@@ -59,20 +65,21 @@ PUBLIC
   [DONE]  POST /api/v1/auth/refresh
   [DONE]  POST /api/v1/auth/logout        (Authenticated)
   [DONE]  GET  /api/v1/auth/me            (Authenticated)
-  [PART]  GET  /api/v1/room-types         (service ready; route fixed)
-  [PART]  GET  /api/v1/room-types/{id}
+  [DONE]  GET  /api/v1/room-types         (active only, per-night price, max occupancy, bed type,
+                                           description, imageUrls, features)
+  [DONE]  GET  /api/v1/room-types/{id}    (404 for missing/inactive)
   [TODO]  POST /api/v1/availability/search
-  [TODO]  POST /api/v1/bookings
+  [TODO]  POST /api/v1/bookings           (idempotency-key required; 201; signUpPrompt)
   [TODO]  POST /api/v1/bookings/lookup
 
-CUSTOMER  [Authorize(Roles="Customer")]  (currently only Authenticated is enforced)
+CUSTOMER  [policy CustomerOnly]
   [TODO]  GET  /api/v1/me/bookings
   [TODO]  GET  /api/v1/me/bookings/{id}
   [TODO]  POST /api/v1/me/bookings/{id}/cancel
   [TODO]  GET  /api/v1/me/profile
   [TODO]  PUT  /api/v1/me/profile
 
-RECEPTION  [Authorize(Roles="Receptionist,Administrator")]
+RECEPTION  [policy StaffOnly]
   [TODO]  GET  /api/v1/reception/bookings
   [TODO]  GET  /api/v1/reception/bookings/{id}
   [TODO]  POST /api/v1/reception/bookings
@@ -83,7 +90,7 @@ RECEPTION  [Authorize(Roles="Receptionist,Administrator")]
   [TODO]  GET  /api/v1/reception/guests
   [TODO]  POST /api/v1/reception/payments
 
-ADMIN  [Authorize(Roles="Administrator")]
+ADMIN  [policy AdminOnly]
   [TODO]  GET  /api/v1/admin/dashboard
   [TODO]  GET  /api/v1/admin/rooms                POST /api/v1/admin/rooms
   [TODO]  GET  /api/v1/admin/rooms/{id}           PUT  /api/v1/admin/rooms/{id}
@@ -112,22 +119,34 @@ Guests listing, Reports/Dashboard, ActivityLogs listing, Settings.
 ---------------------------
 - /api/v1 prefix, hyphenated resource names (room-types).
 - /me/* = Customer; /reception/* = Receptionist+Administrator; /admin/* = Administrator.
-- Controllers thin: inject I*Service, return result.ToActionResult().
-- Add authorization policies (Admin/Staff/Customer) before/with role attributes (Wave 1).
+- Policies defined (Wave 0): AdminOnly, StaffOnly, CustomerOnly. Controllers thin:
+  inject I*Service, return result.ToActionResult().
+- Scalar: Bearer security scheme + operation transformer attach "Authorize" only on
+  endpoints that require authorization (anonymous endpoints stay unlocked).
+- auth/logout and auth/me are Authenticated (no role policy).
 
 
-4. WAVES (build order)
-----------------------
-WAVE 0 - Reconciliation + policies + Scalar bearer auth           [IN PROGRESS]
+4. WAVES (owner-decided order: 0, 1, 3, 4, 2, 5)
+-----------------------------------------------
+WAVE 0 - Reconciliation + policies + Scalar bearer + conventions  [DONE 2026-10-10]
   [x] Align enums/entities/routes/services to SoT
   [x] Global exception handler
-  [ ] Authorization policies (Administrator/Receptionist/Customer)
-  [ ] Bearer security scheme so Scalar shows "Authorize"
-  [ ] Regenerate InitialCreate migration + recreate deutchezz_dev + verify
+  [x] Authorization policies: AdminOnly/StaffOnly/CustomerOnly + Roles constants
+  [x] Bearer security scheme in OpenAPI/Scalar (document + operation transformers)
+  [x] Convention audit: money decimal(18,2); DateOnly stays; UTC timestamps;
+      Booking.IdempotencyKey (unique) + IdempotencyRequestHash; RoomType.ImageUrls/Features
+  [x] Regenerate InitialCreate ONCE (20261010025330_InitialCreate) + recreate deutchezz_dev + verify
+  [x] Booking reference DHI-yyyy-XXXXXX; Africa/Lagos BusinessClock; settings/cors/rate-limit
+      groundwork (part of B)
+  [x] SoT v1.1 (changelog + sections) + tracker + docs/decisions/0001-wave0-decisions.md
 
-WAVE 1 - Public: Availability + Booking create/lookup             [ ]
-  [ ] Controllers/AvailabilityController.cs  -> POST /availability/search
-  [ ] Controllers/BookingsController.cs      -> POST /bookings, POST /bookings/lookup
+WAVE 1 - Public: Availability + Booking create/lookup  [IN PROGRESS - branch feature/wave1-public-endpoints]
+  [ ] 1a Controllers/RoomTypesController rework (public shape: imageUrls, features, active only)
+  [ ] 1b Availability/AvailabilityController.cs  -> POST /availability/search
+  [ ] 1c Controllers/BookingsController.cs      -> POST /bookings  (idempotency + concurrency)
+  [ ] 1d BookingsController.cs                  -> POST /bookings/lookup
+  Wave 1 foundation (B): ISettingsProvider, BusinessClock via TimeProvider, CORS, rate limiting,
+      PagedRequest/PagedResult, IEmailSender (MailKit + logging fallback), IntegrationTests project.
 
 WAVE 2 - Customer self-service (/api/v1/me)                       [ ]
   [ ] Me/BookingsController.cs   (list, get, cancel)
@@ -147,7 +166,7 @@ WAVE 4 - Admin (/api/v1/admin)                                    [ ]
   [ ] Admin/StaffController.cs     (GET/POST, GET/PUT, PATCH status) [needs staff service]
   [ ] Admin/PaymentsController.cs  (GET)
   [ ] Admin/NotificationsController.cs (GET)
-  [ ] Admin/SettingsController.cs  (GET/PUT)         [needs settings service]
+  [ ] Admin/SettingsController.cs  (GET/PUT)         [needs settings service + DB-backed settings]
 
 WAVE 5 - Reporting / audit                                        [ ]
   [ ] Admin/DashboardController.cs -> GET /admin/dashboard  [needs reports service]
@@ -156,13 +175,14 @@ WAVE 5 - Reporting / audit                                        [ ]
 
 
 5. OPEN ITEMS CARRIED FROM SoT (do not hardcode)
------------------------------------------------
-- Booking starts Pending; confirmation transition/policy undefined (SoT Open Decisions).
+------------------------------------------------
+- Pending/unpaid booking expiry (no expiry job, no background worker in this work).
+- Cancellation window and refund rules: undecided (Cancellation:WindowHours exists in config).
 - Check-in payment rule + check-out outstanding-balance rule: configurable, undecided.
-- Cancellation window/refund: undecided (Cancellation:WindowHours exists in config).
-- No-show status: deferred by SoT (do NOT add without SoT update).
+- No-show status: do NOT add (SoT defers).
 - Online payment gateway: deferred.
-- Exact room catalogue / meaning of the price figures: undecided.
+- Full room catalogue beyond the 3 seeded types: undecided (admin-configurable).
+- Guest data retention policy: undecided.
 
 
 6. DEFINITION OF DONE (per wave)
@@ -171,16 +191,17 @@ WAVE 5 - Reporting / audit                                        [ ]
 - dotnet test -> all green
 - New endpoints smoke-tested against deutchezz_dev (happy + one failure path)
 - Result -> correct HTTP status mapping via ResultExtensions
-- Roles applied; anonymous only where intended
+- Roles/policies applied; anonymous only where intended
 - No secrets in git (grep the diff)
 
 
 7. WORKFLOW
 -----------
-- Branch per wave: feature/wave1-public-endpoints, feature/wave2-customer-endpoints,
-  feature/wave3-reception-endpoints, feature/wave4-admin-endpoints,
-  feature/wave5-reporting-and-audit.
+- Branch per wave: feature/reconcile-source-of-truth (Wave 0), feature/wave1-public-endpoints
+  (Waves 1, from Wave 0 tip), feature/wave2-customer-endpoints, feature/wave3-reception-endpoints,
+  feature/wave4-admin-endpoints, feature/wave5-reporting-and-audit.
 - One logical feature per branch; commit after each green build/test; PR before merge.
 - Re-read this file and the SoT at the start of every session.
 
-STATUS: reconciliation in progress (WAVE 0). No remote configured yet - awaiting GitHub repo.
+STATUS: Wave 0 complete (branch feature/reconcile-source-of-truth, PR into main).
+Next: feature/wave1-public-endpoints.

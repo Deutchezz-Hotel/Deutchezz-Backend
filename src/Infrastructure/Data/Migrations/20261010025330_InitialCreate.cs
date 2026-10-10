@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -159,11 +160,13 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "text", nullable: false),
+                    Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     Description = table.Column<string>(type: "text", nullable: true),
                     BasePrice = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
                     MaximumOccupancy = table.Column<int>(type: "integer", nullable: false),
                     BedType = table.Column<string>(type: "text", nullable: true),
+                    ImageUrls = table.Column<List<string>>(type: "text[]", nullable: false),
+                    Features = table.Column<List<string>>(type: "text[]", nullable: false),
                     IsActive = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -236,7 +239,7 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    BookingReference = table.Column<string>(type: "text", nullable: false),
+                    BookingReference = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
                     GuestId = table.Column<Guid>(type: "uuid", nullable: false),
                     CheckInDate = table.Column<DateOnly>(type: "date", nullable: false),
                     CheckOutDate = table.Column<DateOnly>(type: "date", nullable: false),
@@ -250,6 +253,8 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     CancelledAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CancellationReason = table.Column<string>(type: "text", nullable: true),
                     CreatedByUserId = table.Column<Guid>(type: "uuid", nullable: true),
+                    IdempotencyKey = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    IdempotencyRequestHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     ConcurrencyToken = table.Column<byte[]>(type: "bytea", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
@@ -402,6 +407,12 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                 name: "IX_Bookings_GuestId",
                 table: "Bookings",
                 column: "GuestId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Bookings_IdempotencyKey",
+                table: "Bookings",
+                column: "IdempotencyKey",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_RoomAssignments_BookingId_RoomId",

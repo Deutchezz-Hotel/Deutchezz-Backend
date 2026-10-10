@@ -9,5 +9,7 @@ public class RoomType : SoftDeletableEntity
     public decimal BasePrice { get; set; }
     public int MaximumOccupancy { get; set; }
     public string? BedType { get; set; }
+    public List<string> ImageUrls { get; set; } = [];
+    public List<string> Features { get; set; } = [];
     public bool IsActive { get; set; } = true;
 }

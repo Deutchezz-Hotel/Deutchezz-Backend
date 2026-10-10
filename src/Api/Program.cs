@@ -4,6 +4,9 @@ using Deutchezz.Infrastructure.Data;
 using Deutchezz.Infrastructure.Seeders;
 using Deutchezz.Api.Extensions;
 using Deutchezz.Api;
+using Deutchezz.Api.Authorization;
+using Deutchezz.Api.OpenApi;
+using Deutchezz.Domain.Constants;
 using Asp.Versioning;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
@@ -18,7 +21,18 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+    options.AddOperationTransformer<BearerSecurityRequirementTransformer>();
+});
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(Policies.AdminOnly, policy => policy.RequireRole(Roles.Administrator));
+    options.AddPolicy(Policies.StaffOnly, policy => policy.RequireRole(Roles.Receptionist, Roles.Administrator));
+    options.AddPolicy(Policies.CustomerOnly, policy => policy.RequireRole(Roles.Customer));
+});
 
 builder.Services.AddValidatedOptions(builder.Configuration);
 builder.Services.AddApplication();

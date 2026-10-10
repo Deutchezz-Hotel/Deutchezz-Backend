@@ -66,6 +66,7 @@ public static class DependencyInjection
         services.AddAuthorization();
 
         services.AddScoped<IClock, SystemClock>();
+        services.AddSingleton<IBusinessClock, BusinessClock>();
         services.AddScoped<IBookingReferenceGenerator, BookingReferenceGenerator>();
         services.AddScoped<IEmailSender, EmailSender>();
         services.AddScoped<IDbConflictDetector, NpgsqlConflictDetector>();
