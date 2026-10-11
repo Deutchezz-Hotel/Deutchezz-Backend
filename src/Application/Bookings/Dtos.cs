@@ -19,6 +19,8 @@ public record BookingLookupRequest(string BookingReference, string Email);
 
 public record CancelBookingRequest(string? Reason);
 
+public record AnonymousCancelBookingRequest(string BookingReference, string Email, string? Reason);
+
 public record RoomAssignmentLineRequest(Guid BookingRoomTypeId, Guid RoomId);
 
 public record RoomAssignmentRequest(List<RoomAssignmentLineRequest> Assignments);
@@ -36,11 +38,11 @@ public record BookingRoomTypeLineResponse(
     int NumberOfNights,
     decimal Subtotal);
 
-public record AssignmentResponse(Guid RoomId, string RoomNumber, DateTime AssignedAt, DateTime? ReleasedAt);
+public record RoomAssignmentResponse(Guid RoomId, string RoomNumber, DateTime AssignedAt, DateTime? ReleasedAt);
 
 public record PaymentSummary(decimal TotalPaid, decimal Balance);
 
-public record BookingResponse(
+public record BookingDetailResponse(
     Guid Id,
     string BookingReference,
     string GuestFullName,
@@ -55,11 +57,11 @@ public record BookingResponse(
     string PaymentStatus,
     decimal TotalAmount,
     List<BookingRoomTypeLineResponse> Lines,
-    List<AssignmentResponse> Assignments,
+    List<RoomAssignmentResponse> Assignments,
     PaymentSummary Payments,
     DateTime CreatedAt);
 
-public record BookingSummaryResponse(
+public record BookingListItemResponse(
     Guid Id,
     string BookingReference,
     string GuestFullName,
@@ -69,9 +71,24 @@ public record BookingSummaryResponse(
     string PaymentStatus,
     decimal TotalAmount);
 
+public record CheckInResponse(
+    Guid BookingId,
+    string BookingReference,
+    string Status,
+    DateTime CheckedInAt,
+    List<string> RoomNumbers);
+
+public record CheckOutResponse(
+    Guid BookingId,
+    string BookingReference,
+    string Status,
+    DateTime CheckedOutAt,
+    List<string> ReleasedRoomNumbers);
+
 public record CreateBookingResponse(
-    BookingResponse Booking,
-    bool SuggestAccount);
+    BookingDetailResponse Booking,
+    bool SuggestAccount,
+    bool Replay = false);
 
 public class BookingSearchQuery : QueryParameters
 {

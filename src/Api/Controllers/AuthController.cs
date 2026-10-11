@@ -4,6 +4,7 @@ using Deutchezz.Application.Bookings;
 using Deutchezz.Api.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Deutchezz.Api.Controllers;
 
@@ -11,6 +12,7 @@ namespace Deutchezz.Api.Controllers;
 [Route("api/v1/[controller]")]
 public class AuthController(IAuthService authService) : ControllerBase
 {
+    [EnableRateLimiting("auth")]
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
     {
@@ -18,6 +20,7 @@ public class AuthController(IAuthService authService) : ControllerBase
         return result.ToActionResult();
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("login")]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
     {
@@ -25,6 +28,7 @@ public class AuthController(IAuthService authService) : ControllerBase
         return result.ToActionResult();
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request, CancellationToken cancellationToken)
     {

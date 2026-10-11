@@ -2,8 +2,8 @@ using Deutchezz.Application.Abstractions;
 
 namespace Deutchezz.Infrastructure.Services;
 
-public class SystemClock : IClock
+public class SystemClock(TimeProvider timeProvider) : IClock
 {
-    public DateTime UtcNow => DateTime.UtcNow;
-    public DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
+    public DateTime UtcNow => timeProvider.GetUtcNow().UtcDateTime;
+    public DateOnly Today => DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
 }

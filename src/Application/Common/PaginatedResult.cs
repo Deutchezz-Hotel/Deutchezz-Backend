@@ -1,6 +1,9 @@
 namespace Deutchezz.Application.Common;
 
-public record PaginatedResult<T>(List<T> Items, int TotalCount, int PageNumber, int PageSize)
+/// <summary>
+/// List envelope: { items, page, pageSize, totalCount, totalPages }.
+/// </summary>
+public record PaginatedResult<T>(List<T> Items, int TotalCount, int Page, int PageSize)
 {
     public int TotalPages => (int)Math.Ceiling(TotalCount / (double)PageSize);
 }

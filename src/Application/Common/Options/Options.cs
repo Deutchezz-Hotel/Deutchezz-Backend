@@ -35,3 +35,64 @@ public sealed class CancellationOptions
 
     public int WindowHours { get; set; } = 24;
 }
+
+public sealed class SettingsOptions
+{
+    public const string SectionName = "Settings";
+
+    public int MaxRoomsPerBooking { get; set; } = 20;
+    public string CheckInTime { get; set; } = "14:00";
+    public string CheckOutTime { get; set; } = "12:00";
+    public bool RequireFullPaymentAtCheckIn { get; set; }
+    public bool RequirePaymentBeforeCheckOut { get; set; }
+}
+
+public sealed class JobsOptions
+{
+    public const string SectionName = "Jobs";
+
+    public int PendingExpiryIntervalMinutes { get; set; } = 15;
+}
+
+public sealed class CorsOptions
+{
+    public const string SectionName = "Cors";
+
+    public string[] AllowedOrigins { get; set; } = ["http://localhost:5173", "http://localhost:3000"];
+}
+
+public sealed class RateLimitingOptions
+{
+    public const string SectionName = "RateLimiting";
+
+    public RateLimitRule Auth { get; set; } = new() { PermitLimit = 10 };
+    public RateLimitRule Lookup { get; set; } = new() { PermitLimit = 5 };
+    public RateLimitRule BookingCreate { get; set; } = new() { PermitLimit = 10 };
+}
+
+public sealed class RateLimitRule
+{
+    public int PermitLimit { get; set; } = 10;
+    public int WindowSeconds { get; set; } = 60;
+}
+
+public sealed class EmailOptions
+{
+    public const string SectionName = "Email";
+
+    public SmtpOptions Smtp { get; set; } = new();
+
+    /// <summary>SmtpUsername and SmtpPassword are set via user secrets only.</summary>
+    public sealed class SmtpOptions
+    {
+        public string Host { get; set; } = "smtp.gmail.com";
+        public int Port { get; set; } = 587;
+        public string Username { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string FromAddress { get; set; } = string.Empty;
+        public string FromName { get; set; } = "Deutchezz Hotel Ispahan";
+
+        public bool HasCredentials =>
+            !string.IsNullOrWhiteSpace(Username) && !string.IsNullOrWhiteSpace(Password);
+    }
+}

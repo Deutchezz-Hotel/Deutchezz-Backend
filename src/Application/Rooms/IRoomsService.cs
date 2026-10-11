@@ -5,7 +5,7 @@ namespace Deutchezz.Application.Rooms;
 
 public interface IRoomsService
 {
-    Task<Result<PaginatedResult<RoomResponse>>> ListAsync(RoomQuery query, CancellationToken cancellationToken);
+    Task<Result<PaginatedResult<RoomListItemResponse>>> ListAsync(RoomQuery query, CancellationToken cancellationToken);
     Task<Result<RoomResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<Result<RoomResponse>> CreateAsync(CreateRoomRequest request, Guid adminUserId, CancellationToken cancellationToken);
     Task<Result<RoomResponse>> UpdateAsync(Guid id, UpdateRoomRequest request, Guid adminUserId, CancellationToken cancellationToken);

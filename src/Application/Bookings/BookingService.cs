@@ -1,10 +1,16 @@
+using System.Linq.Expressions;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
+using Deutchezz.Application.Emails;
 using Deutchezz.Domain.Common;
 using Deutchezz.Domain.Entities;
 using Deutchezz.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Deutchezz.Application.Bookings;
 
@@ -12,15 +18,30 @@ public class BookingService(
     IAppDbContext db,
     IBookingReferenceGenerator referenceGenerator,
     IClock clock,
+    IBusinessClock businessClock,
     IEmailSender emailSender,
     IActivityLogger activityLogger,
-    IDbConflictDetector conflictDetector) : IBookingService
+    ISettingsProvider settings) : IBookingService
 {
     private const int MaxNights = 30;
-    private const int MaxAttempts = 3;
 
-    public async Task<Result<CreateBookingResponse>> CreateAsync(CreateBookingRequest request, Guid? userId, CancellationToken cancellationToken)
+    private static readonly Dictionary<string, Expression<Func<Booking, object>>> Sortable =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["createdAt"] = b => b.CreatedAt,
+            ["checkInDate"] = b => b.CheckInDate,
+            ["checkOutDate"] = b => b.CheckOutDate,
+            ["bookingReference"] = b => b.BookingReference,
+            ["totalAmount"] = b => b.TotalAmount,
+            ["status"] = b => b.Status
+        };
+
+    public async Task<Result<CreateBookingResponse>> CreateAsync(
+        CreateBookingRequest request, Guid? userId, string idempotencyKey, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            return Error.Validation("booking.idempotency_key_required", "The Idempotency-Key header is required");
+
         var today = clock.Today;
 
         if (request.CheckInDate < today)
@@ -43,39 +64,60 @@ public class BookingService(
             return Error.Validation("booking.email_required", "Guest email is required");
         if (string.IsNullOrWhiteSpace(request.Guest.FirstName) || string.IsNullOrWhiteSpace(request.Guest.LastName))
             return Error.Validation("booking.name_required", "Guest first and last name are required");
+        if (string.IsNullOrWhiteSpace(request.Guest.PhoneNumber))
+            return Error.Validation("booking.phone_required", "Guest phone number is required");
+        if (request.Guest.Email.IndexOf('@') < 0)
+            return Error.Validation("booking.invalid_email", "Guest email is invalid");
+
+        var requestHash = ComputeRequestHash(request);
+
+        var existing = await db.Bookings.FirstOrDefaultAsync(
+            b => b.IdempotencyKey == idempotencyKey, cancellationToken);
+        if (existing is not null)
+            return await ReplayOrConflictAsync(existing, requestHash, cancellationToken);
 
         var roomTypeIds = request.Rooms.Select(r => r.RoomTypeId).ToList();
 
-        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        try
         {
-            try
-            {
-                return await CreateInTransactionAsync(request, userId, roomTypeIds, cancellationToken);
-            }
-            catch (Exception ex) when (conflictDetector.IsSerializationFailure(ex))
-            {
-                if (attempt == MaxAttempts)
-                    return Error.Conflict("booking.unavailable", "The booking could not be completed due to concurrent activity. Please try again.");
-                await Task.Delay(50 * attempt + Random.Shared.Next(0, 50), cancellationToken);
-            }
+            return await CreateInTransactionAsync(
+                request, userId, idempotencyKey, requestHash, roomTypeIds, cancellationToken);
         }
-
-        return Error.Conflict("booking.unavailable", "The booking could not be completed due to concurrent activity. Please try again.");
+        catch (DbUpdateException ex) when (IsIdempotencyKeyConflict(ex))
+        {
+            // A concurrent request with the same key won the race inside the transaction.
+            var winner = await db.Bookings.FirstOrDefaultAsync(
+                b => b.IdempotencyKey == idempotencyKey, cancellationToken);
+            return winner is not null
+                ? await ReplayOrConflictAsync(winner, requestHash, cancellationToken)
+                : Error.Conflict("booking.unavailable",
+                    "The booking could not be completed due to concurrent activity. Please try again.");
+        }
     }
 
     private async Task<Result<CreateBookingResponse>> CreateInTransactionAsync(
-        CreateBookingRequest request, Guid? userId, List<Guid> roomTypeIds, CancellationToken cancellationToken)
+        CreateBookingRequest request, Guid? userId, string idempotencyKey, string requestHash,
+        List<Guid> roomTypeIds, CancellationToken cancellationToken)
     {
         var nights = request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber;
 
-        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        var roomTypes = await db.RoomTypes
-            .Where(rt => roomTypeIds.Contains(rt.Id) && rt.IsActive)
-            .ToDictionaryAsync(rt => rt.Id, cancellationToken);
+        // SoT 7c: one transaction with SELECT ... FOR UPDATE row locks on the requested
+        // RoomType rows in ascending Id order (deadlock avoidance). Concurrent bookings for
+        // the same room types serialize, so the availability check cannot overbook.
+        await db.Database.ExecuteSqlRawAsync(
+            "SELECT 1 FROM \"RoomTypes\" WHERE \"Id\" = ANY({0}) ORDER BY \"Id\" FOR UPDATE",
+            new object[] { roomTypeIds }, cancellationToken);
 
-        if (roomTypes.Count != roomTypeIds.Count)
+        var lockedRoomTypes = await db.RoomTypes
+            .Where(rt => roomTypeIds.Contains(rt.Id))
+            .ToListAsync(cancellationToken);
+
+        if (lockedRoomTypes.Count != roomTypeIds.Count || lockedRoomTypes.Any(rt => !rt.IsActive))
             return Error.Validation("booking.roomtype_invalid", "One or more room types are invalid or inactive");
+
+        var roomTypes = lockedRoomTypes.ToDictionary(rt => rt.Id);
 
         foreach (var line in request.Rooms)
         {
@@ -108,11 +150,12 @@ public class BookingService(
             Adults = request.Adults,
             Children = request.Children,
             SpecialRequests = request.SpecialRequests,
-            // New reservations start Pending; confirmation policy (payment/approval) is an
-            // open hotel decision (Source of Truth - Open Business Decisions).
-            Status = BookingStatus.Pending,
+            // Pay-at-hotel (SoT v1.1): new bookings are created Confirmed with payment Pending.
+            Status = BookingStatus.Confirmed,
             PaymentStatus = PaymentStatus.Pending,
             CreatedByUserId = userId,
+            IdempotencyKey = idempotencyKey,
+            IdempotencyRequestHash = requestHash,
             ConcurrencyToken = Guid.NewGuid().ToByteArray()
         };
 
@@ -136,15 +179,19 @@ public class BookingService(
 
         db.Bookings.Add(booking);
 
-        db.Notifications.Add(new Notification
+        // SoT v1.1: the confirmation Notification is only created when the guest has an account.
+        if (guest.UserId is not null)
         {
-            GuestId = guest.Id,
-            UserId = userId,
-            Type = NotificationType.BookingConfirmed,
-            Title = "Booking received",
-            Message = $"Your booking {booking.BookingReference} has been received.",
-            CreatedAt = clock.UtcNow
-        });
+            db.Notifications.Add(new Notification
+            {
+                GuestId = guest.Id,
+                UserId = guest.UserId,
+                Type = NotificationType.BookingConfirmed,
+                Title = "Booking confirmed",
+                Message = $"Your booking {booking.BookingReference} is confirmed. Check-in: {request.CheckInDate:yyyy-MM-dd}.",
+                CreatedAt = clock.UtcNow
+            });
+        }
 
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -152,14 +199,48 @@ public class BookingService(
         await activityLogger.LogAsync(userId, "booking.created", "Booking", booking.Id,
             $"Booking {booking.BookingReference} created for {request.Guest.Email}", cancellationToken);
 
-        _ = emailSender.SendAsync(request.Guest.Email,
-            $"Booking received {booking.BookingReference}",
-            $"Your booking {booking.BookingReference} has been received. Check-in: {request.CheckInDate:yyyy-MM-dd}.",
-            CancellationToken.None);
+        var emailRooms = request.Rooms
+            .Select(r => new BookingConfirmationRoom(
+                roomTypes[r.RoomTypeId].Name,
+                r.Quantity,
+                roomTypes[r.RoomTypeId].BasePrice,
+                roomTypes[r.RoomTypeId].BasePrice * r.Quantity * nights))
+            .ToList();
+        var (subject, html, text) = BookingConfirmationEmail.Build(new BookingConfirmationModel(
+            booking.BookingReference,
+            $"{request.Guest.FirstName} {request.Guest.LastName}".Trim(),
+            request.CheckInDate,
+            request.CheckOutDate,
+            nights,
+            settings.CheckInTime,
+            emailRooms,
+            total));
+
+        _ = emailSender.SendAsync(request.Guest.Email, subject, html, text, CancellationToken.None);
 
         var response = await MapAsync(booking.Id, cancellationToken);
         return new CreateBookingResponse(response, SuggestAccount: userId is null);
     }
+
+    private async Task<Result<CreateBookingResponse>> ReplayOrConflictAsync(Booking existing, string requestHash, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(existing.IdempotencyRequestHash, requestHash, StringComparison.Ordinal))
+            return Error.Conflict("booking.idempotency_mismatch",
+                "The Idempotency-Key was already used with a different request payload");
+
+        var response = await MapAsync(existing.Id, cancellationToken);
+        return new CreateBookingResponse(response, SuggestAccount: false, Replay: true);
+    }
+
+    private static string ComputeRequestHash(CreateBookingRequest request)
+    {
+        var json = JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static bool IsIdempotencyKeyConflict(DbUpdateException exception) =>
+        exception.InnerException is PostgresException { SqlState: "23505" } pg &&
+        pg.Message.Contains("IdempotencyKey", StringComparison.OrdinalIgnoreCase);
 
     private async Task<Guest> FindOrCreateGuestAsync(GuestInfoRequest info, Guid? userId, CancellationToken cancellationToken)
     {
@@ -181,6 +262,14 @@ public class BookingService(
             return created;
         }
 
+        // SoT 7c: anonymous guests are found by normalized email only among guests without a
+        // registered user account; an anonymous booking is never attached to a registered user's guest.
+        var normalizedEmail = info.Email.Trim().ToLowerInvariant();
+        var existingAnonymous = await db.Guests
+            .FirstOrDefaultAsync(g => g.UserId == null && g.Email.Trim().ToLower() == normalizedEmail, cancellationToken);
+        if (existingAnonymous is not null)
+            return existingAnonymous;
+
         var anonymous = new Guest
         {
             FirstName = info.FirstName,
@@ -192,7 +281,7 @@ public class BookingService(
         return anonymous;
     }
 
-    public async Task<Result<BookingResponse>> LookupAsync(BookingLookupRequest request, CancellationToken cancellationToken)
+    public async Task<Result<BookingDetailResponse>> LookupAsync(BookingLookupRequest request, CancellationToken cancellationToken)
     {
         var reference = request.BookingReference?.Trim();
         var email = request.Email?.Trim().ToLowerInvariant();
@@ -211,7 +300,7 @@ public class BookingService(
         return await MapAsync(booking.Id, cancellationToken);
     }
 
-    public async Task<Result<BookingResponse>> CancelAsync(Guid? id, BookingLookupRequest? lookup, string? reason, Guid? userId, CancellationToken cancellationToken)
+    public async Task<Result<BookingDetailResponse>> CancelAsync(Guid? id, BookingLookupRequest? lookup, string? reason, Guid? userId, CancellationToken cancellationToken)
     {
         Booking? booking;
 
@@ -246,6 +335,18 @@ public class BookingService(
         if (booking.Status is BookingStatus.Cancelled or BookingStatus.CheckedIn or BookingStatus.CheckedOut)
             return Error.Conflict("booking.not_cancellable", $"Booking in status '{booking.Status}' cannot be cancelled");
 
+        // BR-024: a booking can only be cancelled freely until CancellationWindowHours before the
+        // check-in day starts (Africa/Lagos). Cancellations are rejected once the deadline has passed.
+        var windowHours = await CancellationWindowHoursAsync(cancellationToken);
+        if (!IsWithinCancellationWindow(booking, windowHours))
+            return Error.Conflict("booking.cancellation_window_closed",
+                "This booking can no longer be cancelled (the free cancellation window has closed)");
+
+        // BR-025: any amount already paid is refunded in full on a permitted cancellation.
+        var refundedAmount = await RefundPaidPaymentsAsync(booking, cancellationToken);
+        if (refundedAmount > 0)
+            booking.PaymentStatus = PaymentStatus.Refunded;
+
         booking.Status = BookingStatus.Cancelled;
         booking.CancelledAt = clock.UtcNow;
         booking.CancellationReason = reason;
@@ -257,19 +358,87 @@ public class BookingService(
             UserId = userId,
             Type = NotificationType.BookingCancelled,
             Title = "Booking cancelled",
-            Message = $"Booking {booking.BookingReference} has been cancelled.",
+            Message = refundedAmount > 0
+                ? $"Booking {booking.BookingReference} has been cancelled. {refundedAmount} was refunded."
+                : $"Booking {booking.BookingReference} has been cancelled.",
             CreatedAt = clock.UtcNow
         });
 
         await db.SaveChangesAsync(cancellationToken);
 
         await activityLogger.LogAsync(userId, "booking.cancelled", "Booking", booking.Id,
-            reason ?? "Booking cancelled", cancellationToken);
+            refundedAmount > 0 ? $"{reason ?? "Booking cancelled"} · refunded {refundedAmount}" : reason ?? "Booking cancelled",
+            cancellationToken);
+
+        if (booking.Guest is not null && !string.IsNullOrWhiteSpace(booking.Guest.Email))
+        {
+            var (subject, html, text) = BookingCancellationEmail.Build(new BookingCancellationModel(
+                booking.BookingReference,
+                $"{booking.Guest.FirstName} {booking.Guest.LastName}".Trim(),
+                booking.CheckInDate,
+                booking.CheckOutDate,
+                reason,
+                refundedAmount > 0 ? refundedAmount : null));
+            _ = emailSender.SendAsync(booking.Guest.Email, subject, html, text, CancellationToken.None);
+        }
 
         return await MapAsync(booking.Id, cancellationToken);
     }
 
-    public async Task<Result<BookingResponse>> GetByIdForOwnerAsync(Guid id, Guid userId, CancellationToken cancellationToken)
+    /// <summary>Whether <paramref name="booking"/> is currently before the free-cancellation
+    /// deadline (BR-024): now &lt; check-in day start in Africa/Lagos minus the cancellation window.</summary>
+    private bool IsWithinCancellationWindow(Booking booking, int windowHours)
+    {
+        var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+        var lagosOffset = businessClock.ConvertFromUtc(new DateTimeOffset(nowUtc)).Offset;
+        var checkInStartLagos = new DateTimeOffset(booking.CheckInDate.ToDateTime(TimeOnly.MinValue), lagosOffset);
+        var deadlineUtc = checkInStartLagos.UtcDateTime.AddHours(-windowHours);
+        return nowUtc < deadlineUtc;
+    }
+
+    /// <summary>Marks every Paid payment of the booking as Refunded and returns the total refunded.</summary>
+    private async Task<decimal> RefundPaidPaymentsAsync(Booking booking, CancellationToken cancellationToken)
+    {
+        var payments = await db.Payments
+            .Where(p => p.BookingId == booking.Id && p.Status == PaymentStatus.Paid)
+            .ToListAsync(cancellationToken);
+
+        if (payments.Count == 0)
+            return 0m;
+
+        var total = payments.Sum(p => p.Amount);
+        foreach (var payment in payments)
+        {
+            payment.Status = PaymentStatus.Refunded;
+            payment.Notes = string.IsNullOrWhiteSpace(payment.Notes)
+                ? "Refunded on cancellation"
+                : $"{payment.Notes} · Refunded on cancellation";
+        }
+        return total;
+    }
+
+    /// <summary>The cancellation window in hours, honouring the admin-editable DB setting when set.</summary>
+    private async Task<int> CancellationWindowHoursAsync(CancellationToken cancellationToken)
+    {
+        var stored = await db.Settings.FirstOrDefaultAsync(s => s.Key == "CancellationWindowHours", cancellationToken);
+        return stored is not null && int.TryParse(stored.Value, out var parsed) && parsed > 0
+            ? parsed
+            : settings.CancellationWindowHours;
+    }
+
+    /// <summary>A DB-backed boolean gate with an appsettings fallback (7f).</summary>
+    private async Task<bool> PaymentGateAsync(string key, bool fallback, CancellationToken cancellationToken)
+    {
+        var stored = await db.Settings.FirstOrDefaultAsync(s => s.Key == key, cancellationToken);
+        return stored is not null && bool.TryParse(stored.Value, out var parsed) ? parsed : fallback;
+    }
+
+    private async Task<decimal> PaidAmountAsync(Guid bookingId, CancellationToken cancellationToken) =>
+        await db.Payments
+            .Where(p => p.BookingId == bookingId && p.Status == PaymentStatus.Paid)
+            .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
+
+    public async Task<Result<BookingDetailResponse>> GetByIdForOwnerAsync(Guid id, Guid userId, CancellationToken cancellationToken)
     {
         // Ownership is part of the query: someone else's booking is a 404, not a 403.
         var exists = await db.Bookings
@@ -282,7 +451,7 @@ public class BookingService(
         return await MapAsync(id, cancellationToken);
     }
 
-    public async Task<Result<PaginatedResult<BookingSummaryResponse>>> SearchAsync(BookingSearchQuery query, CancellationToken cancellationToken)
+    public async Task<Result<PaginatedResult<BookingListItemResponse>>> SearchAsync(BookingSearchQuery query, CancellationToken cancellationToken)
     {
         var q = db.Bookings.Include(b => b.Guest).AsQueryable();
 
@@ -304,19 +473,43 @@ public class BookingService(
         var totalCount = await q.CountAsync(cancellationToken);
 
         var items = await q
-            .OrderByDescending(b => b.CreatedAt)
-            .Skip((query.PageNumber - 1) * query.PageSize)
+            .ApplySort(query, Sortable, qq => qq.OrderByDescending(b => b.CreatedAt))
+            .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
-            .Select(b => new BookingSummaryResponse(
+            .Select(b => new BookingListItemResponse(
                 b.Id, b.BookingReference,
                 b.Guest != null ? (b.Guest.FirstName + " " + b.Guest.LastName).Trim() : "",
                 b.CheckInDate, b.CheckOutDate, b.Status.ToString(), b.PaymentStatus.ToString(), b.TotalAmount))
             .ToListAsync(cancellationToken);
 
-        return new PaginatedResult<BookingSummaryResponse>(items, totalCount, query.PageNumber, query.PageSize);
+        return new PaginatedResult<BookingListItemResponse>(items, totalCount, query.Page, query.PageSize);
     }
 
-    public async Task<Result<BookingResponse>> GetDetailAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<Result<PaginatedResult<BookingListItemResponse>>> ListForCustomerAsync(
+        Guid userId, BookingSearchQuery query, CancellationToken cancellationToken)
+    {
+        var q = db.Bookings.Include(b => b.Guest)
+            .Where(b => b.Guest != null && b.Guest.UserId == userId);
+
+        if (!string.IsNullOrWhiteSpace(query.Status) && Enum.TryParse<BookingStatus>(query.Status, true, out var status))
+            q = q.Where(b => b.Status == status);
+
+        var totalCount = await q.CountAsync(cancellationToken);
+
+        var items = await q
+            .ApplySort(query, Sortable, qq => qq.OrderByDescending(b => b.CreatedAt))
+            .Skip((query.Page - 1) * query.PageSize)
+            .Take(query.PageSize)
+            .Select(b => new BookingListItemResponse(
+                b.Id, b.BookingReference,
+                b.Guest != null ? (b.Guest.FirstName + " " + b.Guest.LastName).Trim() : "",
+                b.CheckInDate, b.CheckOutDate, b.Status.ToString(), b.PaymentStatus.ToString(), b.TotalAmount))
+            .ToListAsync(cancellationToken);
+
+        return new PaginatedResult<BookingListItemResponse>(items, totalCount, query.Page, query.PageSize);
+    }
+
+    public async Task<Result<BookingDetailResponse>> GetDetailAsync(Guid id, CancellationToken cancellationToken)
     {
         var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
         if (booking is null)
@@ -325,7 +518,7 @@ public class BookingService(
         return await MapAsync(id, cancellationToken);
     }
 
-    public async Task<Result<BookingResponse>> AssignRoomsAsync(Guid id, RoomAssignmentRequest request, Guid staffUserId, CancellationToken cancellationToken)
+    public async Task<Result<BookingDetailResponse>> AssignRoomsAsync(Guid id, RoomAssignmentRequest request, Guid staffUserId, CancellationToken cancellationToken)
     {
         var booking = await db.Bookings
             .Include(b => b.Guest)
@@ -357,6 +550,17 @@ public class BookingService(
             .Select(ra => ra.RoomId)
             .ToListAsync(cancellationToken);
 
+        // A room cannot be assigned to two overlapping live bookings. Look at the rooms already
+        // held by another Confirmed/CheckedIn booking whose dates overlap this booking's stay.
+        var conflictingRoomIds = await db.RoomAssignments
+            .Where(ra => roomIds.Contains(ra.RoomId) && ra.ReleasedAt == null)
+            .Join(db.Bookings.Where(b => b.Id != id
+                    && (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
+                    && b.CheckInDate < booking.CheckOutDate && b.CheckOutDate > booking.CheckInDate),
+                ra => ra.BookingId, b => b.Id, (ra, b) => ra.RoomId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
         var perLineCount = new Dictionary<Guid, int>();
         foreach (var assignment in assignments)
         {
@@ -368,6 +572,8 @@ public class BookingService(
                 return Error.Validation("booking.wrong_roomtype", $"Room {room.RoomNumber} does not belong to the booked room type");
             if (!room.IsActive || room.Status is RoomStatus.Maintenance or RoomStatus.Inactive)
                 return Error.Conflict("booking.room_unavailable", $"Room {room.RoomNumber} is not available");
+            if (conflictingRoomIds.Contains(assignment.RoomId))
+                return Error.Conflict("booking.room_unavailable", $"Room {room.RoomNumber} is already booked for these dates");
             if (alreadyAssigned.Contains(assignment.RoomId))
                 return Error.Conflict("booking.room_already_assigned", $"Room {room.RoomNumber} is already assigned to this booking");
 
@@ -396,9 +602,9 @@ public class BookingService(
         return await MapAsync(booking.Id, cancellationToken);
     }
 
-    public async Task<Result<BookingResponse>> CheckInAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken)
+    public async Task<Result<CheckInResponse>> CheckInAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken)
     {
-        var booking = await db.Bookings.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
 
@@ -407,6 +613,15 @@ public class BookingService(
 
         if (booking.CheckInDate > clock.Today)
             return Error.Conflict("booking.not_yet_arrivable", "Booking check-in date has not been reached");
+
+        // 7f: optional gate requiring full payment before check-in (off by default).
+        if (await PaymentGateAsync("RequireFullPaymentAtCheckIn", settings.RequireFullPaymentAtCheckIn, cancellationToken))
+        {
+            var paid = await PaidAmountAsync(booking.Id, cancellationToken);
+            if (paid < booking.TotalAmount)
+                return Error.Conflict("booking.balance_outstanding",
+                    "The outstanding balance for this booking must be settled before check-in");
+        }
 
         var lines = await db.BookingRoomTypes.Where(brt => brt.BookingId == id).ToListAsync(cancellationToken);
         var assignments = await db.RoomAssignments
@@ -454,17 +669,41 @@ public class BookingService(
         await activityLogger.LogAsync(staffUserId, "booking.checked_in", "Booking", booking.Id,
             $"Checked in {rooms.Count} room(s)", cancellationToken);
 
-        return await MapAsync(booking.Id, cancellationToken);
+        if (booking.Guest is not null && !string.IsNullOrWhiteSpace(booking.Guest.Email))
+        {
+            var (subject, html, text) = StayNotificationEmail.BuildCheckIn(new StayNotificationModel(
+                booking.BookingReference,
+                $"{booking.Guest.FirstName} {booking.Guest.LastName}".Trim(),
+                rooms.Select(r => r.RoomNumber).ToList(),
+                clock.UtcNow));
+            _ = emailSender.SendAsync(booking.Guest.Email, subject, html, text, CancellationToken.None);
+        }
+
+        return new CheckInResponse(
+            booking.Id,
+            booking.BookingReference,
+            booking.Status.ToString(),
+            clock.UtcNow,
+            rooms.Select(r => r.RoomNumber).ToList());
     }
 
-    public async Task<Result<BookingResponse>> CheckOutAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken)
+    public async Task<Result<CheckOutResponse>> CheckOutAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken)
     {
-        var booking = await db.Bookings.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
 
         if (booking.Status != BookingStatus.CheckedIn)
             return Error.Conflict("booking.invalid_state", $"Only checked-in bookings can be checked out (current: {booking.Status})");
+
+        // 7f: optional gate blocking check-out while a balance is outstanding (off by default).
+        if (await PaymentGateAsync("RequirePaymentBeforeCheckOut", settings.RequirePaymentBeforeCheckOut, cancellationToken))
+        {
+            var paid = await PaidAmountAsync(booking.Id, cancellationToken);
+            if (paid < booking.TotalAmount)
+                return Error.Conflict("booking.balance_outstanding",
+                    "The outstanding balance for this booking must be settled before check-out");
+        }
 
         var assignments = await db.RoomAssignments
             .Where(ra => ra.BookingId == id && ra.ReleasedAt == null)
@@ -501,10 +740,25 @@ public class BookingService(
 
         await activityLogger.LogAsync(staffUserId, "booking.checked_out", "Booking", booking.Id, null, cancellationToken);
 
-        return await MapAsync(booking.Id, cancellationToken);
+        if (booking.Guest is not null && !string.IsNullOrWhiteSpace(booking.Guest.Email))
+        {
+            var (subject, html, text) = StayNotificationEmail.BuildCheckOut(new StayNotificationModel(
+                booking.BookingReference,
+                $"{booking.Guest.FirstName} {booking.Guest.LastName}".Trim(),
+                rooms.Select(r => r.RoomNumber).ToList(),
+                clock.UtcNow));
+            _ = emailSender.SendAsync(booking.Guest.Email, subject, html, text, CancellationToken.None);
+        }
+
+        return new CheckOutResponse(
+            booking.Id,
+            booking.BookingReference,
+            booking.Status.ToString(),
+            clock.UtcNow,
+            rooms.Select(r => r.RoomNumber).ToList());
     }
 
-    private async Task<BookingResponse> MapAsync(Guid id, CancellationToken cancellationToken)
+    private async Task<BookingDetailResponse> MapAsync(Guid id, CancellationToken cancellationToken)
     {
         var booking = await db.Bookings
             .Include(b => b.Guest)
@@ -524,7 +778,7 @@ public class BookingService(
             .Where(p => p.BookingId == id && p.Status == PaymentStatus.Paid)
             .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
 
-        return new BookingResponse(
+        return new BookingDetailResponse(
             booking.Id,
             booking.BookingReference,
             booking.Guest is not null ? $"{booking.Guest.FirstName} {booking.Guest.LastName}".Trim() : "",
@@ -546,7 +800,7 @@ public class BookingService(
                 l.RatePerNight,
                 l.NumberOfNights,
                 l.Subtotal)).ToList(),
-            assignments.Select(a => new AssignmentResponse(
+            assignments.Select(a => new RoomAssignmentResponse(
                 a.RoomId,
                 roomById.GetValueOrDefault(a.RoomId, ""),
                 a.AssignedAt,

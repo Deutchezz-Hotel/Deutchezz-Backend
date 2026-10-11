@@ -1,27 +1,34 @@
 DEUTCHEZZ HOTEL BACKEND - CONTINUATION / SOURCE OF TRUTH (IMPLEMENTATION TRACKER)
 =================================================================================
-Last updated: 2026-10-09
-Companion document: "Deut_Source of Truth.txt" (v1.0) = the design baseline.
+Last updated: 2026-10-11
+Companion document: "Deut_Source of Truth.txt" (v1.0, archived baseline) and
+docs/source-of-truth/SOURCE_OF_TRUTH.md (v1.5 = current, authoritative).
 Governance: where this file and the Source of Truth (SoT) disagree, the SoT wins.
 Update the SoT first for any business/architectural change, then this file.
 
-Branch: feature/reconcile-source-of-truth
-Prior: feature/foundation-config (foundation + Scalar)
+Branch: feature/reconcile-source-of-truth (recreated from main after earlier PR merge)
+Prior: main = "Merge pull request #1 (feature/reconcile-source-of-truth)"
 
 
-0. GROUND TRUTH (verified 2026-10-09)
+0. GROUND TRUTH (verified 2026-10-10)
 -------------------------------------
 - One project: src/Deutchezz.csproj (Web SDK), layers Api/Application/Domain/Infrastructure.
 - Solution: Deutchezz.sln (src + tests/Deutchezz.ArchitectureTests).
 - Framework: .NET 9, EF Core 9 (PostgreSQL), ASP.NET Identity + JWT, Asp.Versioning, Scalar.
 - Database: local PostgreSQL 18, database deutchezz_dev.
-- Seeding idempotent: 3 roles (Administrator/Receptionist/Customer), 1 admin, 3 room types, 20 rooms.
+- Migration: 20261010025330_InitialCreate, regenerated once under Wave 0 (do NOT regenerate again;
+  later schema changes are new incremental migrations).
+- Seeding idempotent and verified by running the app twice:
+  3 roles (Administrator/Receptionist/Customer), 1 admin, 3 room types:
+  Standard 30000, Deluxe 40000, Executive 55000 (NGN per night) + ImageUrls/Features.
+  20 rooms: 8 Standard (101-108), 7 Deluxe (201-207), 5 Executive (301-305). Seeding never updates.
 - Scalar UI (Development only): http://localhost:5144/scalar/v1  (OpenAPI: /openapi/v1.json)
 - Run locally: dotnet run --project src --launch-profile http
 - Secrets only in dotnet user-secrets. Never in git.
 - Global exception handling: GlobalExceptionHandler (ProblemDetails, 500) registered in Program.
+- Booking reference format (SoT v1.1): DHI-<yyyy>-<XXXXXX>, Africa/Lagos year, alphabet without 0/O/1/I/L.
 
-RECONCILIATION APPLIED (this branch) - code now matches SoT v1.0:
+RECONCILIATION APPLIED (v1.0 baseline, this branch):
   + Enums aligned: UserRole(Customer/Receptionist/Administrator),
     RoomStatus(Available/Occupied/Maintenance/Inactive),
     BookingStatus(Pending/Confirmed/CheckedIn/CheckedOut/Cancelled),
@@ -30,14 +37,11 @@ RECONCILIATION APPLIED (this branch) - code now matches SoT v1.0:
     NotificationType(BookingConfirmed/PaymentReceived/BookingCancelled/CheckInCompleted/CheckOutCompleted).
   + Entity fields aligned: Guest(FirstName/LastName/PhoneNumber), User(FirstName/LastName),
     RoomType(BasePrice/MaximumOccupancy/BedType), Room(IsActive),
-    Booking(Adults/Children/SpecialRequests, starts Pending),
+    Booking(Adults/Children/SpecialRequests/TotalAmount, starts Pending per SoT; created Confirmed per v1.1),
     BookingRoomType(RatePerNight/NumberOfNights/Subtotal, own Id),
-    Payment(Status/Notes), RoomAssignment(BookingRoomTypeId, own Id),
-    ActivityLog(UserId/Description).
-  + Public route fixed: /api/v1/room-types (was /roomtypes).
-  + Availability: POST search takes adults/children/rooms; calendar endpoint REMOVED (not in SoT).
-  + Bookings: assign-rooms and check-in split into separate operations; NoShow REMOVED (SoT deferred).
-  + Roles seeded as Administrator/Receptionist/Customer.
+    Payment(Status/Notes), RoomAssignment(BookingRoomTypeId, own Id), ActivityLog(UserId nullable).
+  + Public route: /api/v1/room-types. Availability: POST search; calendar endpoint REMOVED (not in SoT).
+  + Bookings: assign-rooms and check-in split; NoShow REMOVED.
 
 
 1. ENTITY STATUS (matches SoT section 5)
@@ -45,6 +49,8 @@ RECONCILIATION APPLIED (this branch) - code now matches SoT v1.0:
 [DONE] BaseEntity / AuditableEntity / SoftDeletableEntity
 [DONE] User, Guest, RoomType, Room, Booking, BookingRoomType, RoomAssignment, Payment,
        Notification, ActivityLog
+[DONE] Booking.IdempotencyKey (unique, nullable) + IdempotencyRequestHash (SoT v1.1)
+[DONE] RoomType.ImageUrls (<=8) + RoomType.Features (<=20) as text[] (SoT v1.1)
 NOTE: User.Role is represented by ASP.NET Identity role membership (role claim), not a column.
 NOTE: Guest/RoomType/Room retain soft-delete support in addition to SoT fields.
 
@@ -59,110 +65,187 @@ PUBLIC
   [DONE]  POST /api/v1/auth/refresh
   [DONE]  POST /api/v1/auth/logout        (Authenticated)
   [DONE]  GET  /api/v1/auth/me            (Authenticated)
-  [PART]  GET  /api/v1/room-types         (service ready; route fixed)
-  [PART]  GET  /api/v1/room-types/{id}
-  [TODO]  POST /api/v1/availability/search
-  [TODO]  POST /api/v1/bookings
-  [TODO]  POST /api/v1/bookings/lookup
+  [DONE]  GET  /api/v1/room-types         (active only, per-night price, max occupancy, bed type,
+                                           description, imageUrls, features)
+  [DONE]  GET  /api/v1/room-types/{id}    (404 for missing/inactive)
+  [DONE]  POST /api/v1/availability/search
+  [DONE]  POST /api/v1/bookings           (idempotency-key required; 201; signUpPrompt)
+  [DONE]  POST /api/v1/bookings/lookup
+  [DONE]  POST /api/v1/bookings/cancel     (added v1.4; anonymous reference+email cancel)
 
-CUSTOMER  [Authorize(Roles="Customer")]  (currently only Authenticated is enforced)
-  [TODO]  GET  /api/v1/me/bookings
-  [TODO]  GET  /api/v1/me/bookings/{id}
-  [TODO]  POST /api/v1/me/bookings/{id}/cancel
-  [TODO]  GET  /api/v1/me/profile
-  [TODO]  PUT  /api/v1/me/profile
+CUSTOMER  [policy CustomerOnly]
+  [DONE]  GET  /api/v1/me/bookings
+  [DONE]  GET  /api/v1/me/bookings/{id}
+  [DONE]  POST /api/v1/me/bookings/{id}/cancel
+  [DONE]  GET  /api/v1/me/profile
+  [DONE]  PUT  /api/v1/me/profile
 
-RECEPTION  [Authorize(Roles="Receptionist,Administrator")]
-  [TODO]  GET  /api/v1/reception/bookings
-  [TODO]  GET  /api/v1/reception/bookings/{id}
-  [TODO]  POST /api/v1/reception/bookings
-  [TODO]  POST /api/v1/reception/bookings/{id}/assign-rooms
-  [TODO]  POST /api/v1/reception/bookings/{id}/check-in
-  [TODO]  POST /api/v1/reception/bookings/{id}/check-out
-  [TODO]  GET  /api/v1/reception/rooms
-  [TODO]  GET  /api/v1/reception/guests
-  [TODO]  POST /api/v1/reception/payments
+RECEPTION  [policy StaffOnly]
+  [DONE]  GET  /api/v1/reception/bookings
+  [DONE]  GET  /api/v1/reception/bookings/{id}
+  [DONE]  POST /api/v1/reception/bookings
+  [DONE]  POST /api/v1/reception/bookings/{id}/assign-rooms
+  [DONE]  POST /api/v1/reception/bookings/{id}/check-in
+  [DONE]  POST /api/v1/reception/bookings/{id}/check-out
+  [DONE]  GET  /api/v1/reception/rooms
+                                          (v1.4: date + search filters, effectiveStatus per date)
+  [DONE]  GET  /api/v1/reception/guests
+  [DONE]  POST /api/v1/reception/payments
+  [DONE]  GET  /api/v1/reception/payments   (added v1.3; same filters/sort/paging as admin list)
 
-ADMIN  [Authorize(Roles="Administrator")]
-  [TODO]  GET  /api/v1/admin/dashboard
-  [TODO]  GET  /api/v1/admin/rooms                POST /api/v1/admin/rooms
-  [TODO]  GET  /api/v1/admin/rooms/{id}           PUT  /api/v1/admin/rooms/{id}
-  [TODO]  PATCH /api/v1/admin/rooms/{id}/status
-  [TODO]  GET  /api/v1/admin/room-types           POST /api/v1/admin/room-types
-  [TODO]  GET  /api/v1/admin/room-types/{id}      PUT  /api/v1/admin/room-types/{id}
-  [TODO]  PATCH /api/v1/admin/room-types/{id}/status
-  [TODO]  GET  /api/v1/admin/bookings
-  [TODO]  GET  /api/v1/admin/guests
-  [TODO]  GET  /api/v1/admin/staff                POST /api/v1/admin/staff
-  [TODO]  GET  /api/v1/admin/staff/{id}           PUT  /api/v1/admin/staff/{id}
-  [TODO]  PATCH /api/v1/admin/staff/{id}/status
-  [TODO]  GET  /api/v1/admin/payments
-  [TODO]  GET  /api/v1/admin/reports
-  [TODO]  GET  /api/v1/admin/activity-logs
-  [TODO]  GET  /api/v1/admin/notifications
-  [TODO]  GET  /api/v1/admin/settings             PUT  /api/v1/admin/settings
+ADMIN  [policy AdminOnly]
+  [DONE]  GET  /api/v1/admin/dashboard
+  [DONE]  GET  /api/v1/admin/rooms                POST /api/v1/admin/rooms
+  [DONE]  GET  /api/v1/admin/rooms/{id}           PUT  /api/v1/admin/rooms/{id}
+  [DONE]  PATCH /api/v1/admin/rooms/{id}/status
+  [DONE]  GET  /api/v1/admin/room-types           POST /api/v1/admin/room-types
+  [DONE]  GET  /api/v1/admin/room-types/{id}      PUT  /api/v1/admin/room-types/{id}
+  [DONE]  PATCH /api/v1/admin/room-types/{id}/status
+  [DONE]  GET  /api/v1/admin/bookings
+  [DONE]  GET  /api/v1/admin/guests
+  [DONE]  GET  /api/v1/admin/staff                POST /api/v1/admin/staff
+  [DONE]  GET  /api/v1/admin/staff/{id}           PUT  /api/v1/admin/staff/{id}
+  [DONE]  PATCH /api/v1/admin/staff/{id}/status
+  [DONE]  GET  /api/v1/admin/payments
+  [DONE]  GET  /api/v1/admin/reports
+  [DONE]  GET  /api/v1/admin/activity-logs
+  [DONE]  GET  /api/v1/admin/notifications
+  [DONE]  GET  /api/v1/admin/settings             PUT  /api/v1/admin/settings
 
 Backing services present: Auth, RoomTypes(+Create/Update/SetActive), Rooms, Availability,
-Bookings, Payments, Profile, Notifications.
-Services MISSING entirely (need design + SoT-aligned scope): Staff management,
-Guests listing, Reports/Dashboard, ActivityLogs listing, Settings.
+Bookings, Payments, Profile, Notifications, Guests, Staff, AdminSettings, Reports, ActivityLogs.
+v1.3: PaymentListItemResponse now also returns BookingReference, GuestName and Reference so the
+admin/reception payment tables can show booking reference, client name and transaction reference
+without a per-row detail call.
+v1.4 (2026-10-11):
+  - Room list (admin + reception) accepts `date` (yyyy-MM-dd, default today) and `search`
+    (room number / type name); RoomResponse + RoomListItemResponse return `effectiveStatus`
+    (Maintenance/Inactive physical, else Occupied when a live assignment covers the date, else
+    Available). Status filter matches effective status for the date.
+  - AssignRooms now rejects (409 booking.room_unavailable) a room already held by another
+    Confirmed/CheckedIn booking with overlapping dates (BR-023).
+  - Public anonymous cancel: POST /api/v1/bookings/cancel (rate limit lookup).
+  - Transactional HTML emails (Application/Emails): booking confirmation, cancellation, payment
+    receipt, check-in/check-out notice; SmtpEmailSender never throws (logs on failure).
+v1.5 (2026-10-11) — operational policies (owner-approved; configurable, least-restrictive defaults):
+  - Pending booking expiry: PendingBookingExpiryWorker (BackgroundService, Application layer) cancels
+    Pending bookings older than Cancellation:WindowHours; interval Jobs:PendingExpiryIntervalMinutes
+    (default 15). ActivityLog booking.expired (actor null) + BookingCancelled notification (account
+    guests only); no email. Dormant under pay-at-hotel (nothing creates Pending yet).
+  - Cancellation window (BR-024): free cancel only until Cancellation:WindowHours before the check-in
+    day start (Africa/Lagos) -> else 409 booking.cancellation_window_closed (me + anonymous cancel).
+  - Refund (BR-025): permitted cancel marks all Paid payments Refunded and sets PaymentStatus Refunded;
+    cancellation email names the refunded amount.
+  - Payment gates (7f): Settings:RequireFullPaymentAtCheckIn / RequirePaymentBeforeCheckOut (default
+    false), DB-backed via Setting rows (no migration) + admin GET/PUT /admin/settings + Settings page;
+    when on, check-in/check-out with balance outstanding -> 409 booking.balance_outstanding.
+  - MailKit bumped 4.14.1 -> 4.16.0 (fixes NU1902 / CVE-2026-41319).
+  - Integration tests: tests/Deutchezz.IntegrationTests/PolicyTests.cs (window, refund, gates).
+All previously-missing services implemented (Staff management, Guests listing,
+Reports/Dashboard, ActivityLogs listing, Settings). Settings are DB-backed (Setting table,
+migration 20261010113927_AddAdministrativeSettings) with appsettings fallback; callers of
+ISettingsProvider are unchanged.
 
 
 3. ROUTE / AUTH CONVENTIONS
 ---------------------------
 - /api/v1 prefix, hyphenated resource names (room-types).
 - /me/* = Customer; /reception/* = Receptionist+Administrator; /admin/* = Administrator.
-- Controllers thin: inject I*Service, return result.ToActionResult().
-- Add authorization policies (Admin/Staff/Customer) before/with role attributes (Wave 1).
+- Policies defined (Wave 0): AdminOnly, StaffOnly, CustomerOnly. Controllers thin:
+  inject I*Service, return result.ToActionResult().
+- Scalar: Bearer security scheme + operation transformer attach "Authorize" only on
+  endpoints that require authorization (anonymous endpoints stay unlocked).
+- auth/logout and auth/me are Authenticated (no role policy).
 
 
-4. WAVES (build order)
-----------------------
-WAVE 0 - Reconciliation + policies + Scalar bearer auth           [IN PROGRESS]
+4. WAVES (owner-decided order: 0, 1, 3, 4, 2, 5)
+-----------------------------------------------
+WAVE 0 - Reconciliation + policies + Scalar bearer + conventions  [DONE 2026-10-10]
   [x] Align enums/entities/routes/services to SoT
   [x] Global exception handler
-  [ ] Authorization policies (Administrator/Receptionist/Customer)
-  [ ] Bearer security scheme so Scalar shows "Authorize"
-  [ ] Regenerate InitialCreate migration + recreate deutchezz_dev + verify
+  [x] Authorization policies: AdminOnly/StaffOnly/CustomerOnly + Roles constants
+  [x] Bearer security scheme in OpenAPI/Scalar (document + operation transformers)
+  [x] Convention audit: money decimal(18,2); DateOnly stays; UTC timestamps;
+      Booking.IdempotencyKey (unique) + IdempotencyRequestHash; RoomType.ImageUrls/Features
+  [x] Regenerate InitialCreate ONCE (20261010025330_InitialCreate) + recreate deutchezz_dev + verify
+  [x] Booking reference DHI-yyyy-XXXXXX; Africa/Lagos BusinessClock; settings/cors/rate-limit
+      groundwork (part of B)
+  [x] SoT v1.1 (changelog + sections) + tracker + docs/decisions/0001-wave0-decisions.md
 
-WAVE 1 - Public: Availability + Booking create/lookup             [ ]
-  [ ] Controllers/AvailabilityController.cs  -> POST /availability/search
-  [ ] Controllers/BookingsController.cs      -> POST /bookings, POST /bookings/lookup
+WAVE 1 - Public: Availability + Booking create/lookup  [DONE - branch feature/wave1-public-endpoints]
+  [x] 1a Controllers/RoomTypesController rework (public shape: imageUrls, features, active only)
+  [x] 1b Availability/AvailabilityController.cs  -> POST /availability/search
+  [x] 1c Controllers/BookingsController.cs      -> POST /bookings  (idempotency + concurrency)
+  [x] 1d BookingsController.cs                  -> POST /bookings/lookup
+  Wave 1 foundation (B): ISettingsProvider, BusinessClock via TimeProvider, CORS, rate limiting,
+      PagedRequest/PagedResult, IEmailSender (MailKit + logging fallback), IntegrationTests project.
 
-WAVE 2 - Customer self-service (/api/v1/me)                       [ ]
-  [ ] Me/BookingsController.cs   (list, get, cancel)
-  [ ] Me/ProfileController.cs    (get, put)
+WAVE 2 - Customer self-service (/api/v1/me)                       [DONE]
+  [x] Me/BookingsController.cs   (list, get, cancel)
+  [x] Me/ProfileController.cs    (get, put)
+  [x] Me/NotificationsController.cs (list, unread-count, mark read)
 
-WAVE 3 - Reception (/api/v1/reception)                            [ ]
-  [ ] Reception/BookingsController.cs (list, get, POST create, assign-rooms, check-in, check-out)
-  [ ] Reception/RoomsController.cs    (GET rooms)
-  [ ] Reception/GuestsController.cs   (GET guests)   [needs guest listing service]
-  [ ] Reception/PaymentsController.cs (POST payments)
+WAVE 3 - Reception (/api/v1/reception)                            [DONE]
+  [x] Reception/BookingsController.cs (list, get, POST create, assign-rooms, check-in, check-out)
+  [x] Reception/RoomsController.cs    (GET rooms)
+  [x] Reception/GuestsController.cs   (GET guests)
+  [x] Reception/PaymentsController.cs (POST payments)
 
-WAVE 4 - Admin (/api/v1/admin)                                    [ ]
-  [ ] Admin/RoomTypesController.cs (GET/POST, GET/PUT, PATCH status)
-  [ ] Admin/RoomsController.cs     (GET/POST, GET/PUT, PATCH status)
-  [ ] Admin/BookingsController.cs  (GET)
-  [ ] Admin/GuestsController.cs    (GET)             [needs guest listing service]
-  [ ] Admin/StaffController.cs     (GET/POST, GET/PUT, PATCH status) [needs staff service]
-  [ ] Admin/PaymentsController.cs  (GET)
-  [ ] Admin/NotificationsController.cs (GET)
-  [ ] Admin/SettingsController.cs  (GET/PUT)         [needs settings service]
+WAVE 4 - Admin (/api/v1/admin)                                    [DONE]
+  [x] Admin/RoomTypesController.cs (GET/POST, GET/PUT, PATCH status)
+  [x] Admin/RoomsController.cs     (GET/POST, GET/PUT, PATCH status)
+  [x] Admin/BookingsController.cs  (GET)
+  [x] Admin/GuestsController.cs    (GET)
+  [x] Admin/StaffController.cs     (GET/POST, GET/PUT, PATCH status)
+  [x] Admin/PaymentsController.cs  (GET)
+  [x] Admin/NotificationsController.cs (GET)
+  [x] Admin/SettingsController.cs  (GET/PUT)  (DB-backed Setting table + appsettings fallback)
 
-WAVE 5 - Reporting / audit                                        [ ]
-  [ ] Admin/DashboardController.cs -> GET /admin/dashboard  [needs reports service]
-  [ ] Admin/ReportsController.cs   -> GET /admin/reports    [needs reports service]
-  [ ] Admin/ActivityLogsController.cs -> GET /admin/activity-logs [needs read service]
+WAVE 5 - Reporting / audit                                        [DONE]
+  [x] Admin/DashboardController.cs -> GET /admin/dashboard
+  [x] Admin/ReportsController.cs   -> GET /admin/reports
+  [x] Admin/ActivityLogsController.cs -> GET /admin/activity-logs
+
+WAVE 6 - Contract conformance & test coverage   [DONE - branch feature/wave6-conformance]
+  [x] 6a ProblemDetails error conformance (ResultExtensions -> RFC 7807 with `code` extension)
+  [x] 6b sort/direction on list endpoints (QueryParameters.Sort/Direction)
+  [x] 6c List/detail DTO families (BookingListItem/Detail, RoomListItem, RoomTypeListItem,
+      PaymentListItem, CheckInResponse, CheckOutResponse, RoomAssignmentResponse)
+  [x] 6d Integration tests for critical paths (auth, availability, booking idempotency, lookup,
+      reception check-in/out, admin CRUD/settings, dashboard/reports) - 31 tests, all green.
+  SoT v1.2 changelog records these conformance decisions.
+
+  WAVE 6 TEST HARNESS (tests/Deutchezz.IntegrationTests):
+  - Shared host via IntegrationCollection (ICollectionFixture) so migrations/seed run once; tests
+    run sequentially against a dedicated deutchezz_test database (never deutchezz_dev).
+  - HotelWebApplicationFactory derives the test connection string from the developer's configured
+    connection string (user secrets / DEUTCHEZZ_TEST_CONNECTION env var) and rewrites the database
+    name only; forces Development; injects a test Jwt:Key and seed admin; raises rate limits.
+  - FakeClock (2026-10-10) + FakeEmailSender swapped in; IntegrationTestBase provides auth +
+    RFC 7807 problem-details assertions.
+
+  WAVE 6 REGRESSIONS FIXED (surfaced by the new tests):
+  - RoomsService.ListAsync: EF could not translate ordering by a member of a constructed DTO
+    (500 on GET /admin/rooms and /reception/rooms). Now orders an anonymous join projection and
+    maps to RoomListItemResponse after materializing.
+  - ProblemDetails content type: JwtBearer OnChallenge/OnForbidden and the 429 rate-limiter handler
+    set ContentType then called WriteAsJsonAsync, which overwrote it to application/json. Now the
+    problem+json content type is passed to WriteAsJsonAsync.
+  - Npgsql UTC bounds: date range filters built DateTime with Kind=Unspecified against
+    timestamp-with-time-zone columns (500). ReportsService, GuestsService, ActivityLogsService now
+    use DateOnlyExtensions.UtcStartOfDay.
 
 
 5. OPEN ITEMS CARRIED FROM SoT (do not hardcode)
------------------------------------------------
-- Booking starts Pending; confirmation transition/policy undefined (SoT Open Decisions).
-- Check-in payment rule + check-out outstanding-balance rule: configurable, undecided.
-- Cancellation window/refund: undecided (Cancellation:WindowHours exists in config).
-- No-show status: deferred by SoT (do NOT add without SoT update).
-- Online payment gateway: deferred.
-- Exact room catalogue / meaning of the price figures: undecided.
+------------------------------------------------
+- Pending/unpaid booking expiry: DONE (v1.5, background worker; dormant until the online flow).
+- Cancellation window and refund rules: DONE (v1.5, SoT 7d).
+- Check-in payment rule + check-out outstanding-balance rule: DONE (v1.5, SoT 7f; default off).
+- No-show status: do NOT add (SoT defers).
+- Online payment gateway: deferred (SoT 14).
+- Taxes/fees: deferred until hotel policy (SoT 14/15).
+- Full room catalogue beyond the 3 seeded types: undecided (admin-configurable).
+- Guest data retention policy: undecided.
 
 
 6. DEFINITION OF DONE (per wave)
@@ -171,16 +254,24 @@ WAVE 5 - Reporting / audit                                        [ ]
 - dotnet test -> all green
 - New endpoints smoke-tested against deutchezz_dev (happy + one failure path)
 - Result -> correct HTTP status mapping via ResultExtensions
-- Roles applied; anonymous only where intended
+- Roles/policies applied; anonymous only where intended
 - No secrets in git (grep the diff)
 
 
 7. WORKFLOW
 -----------
-- Branch per wave: feature/wave1-public-endpoints, feature/wave2-customer-endpoints,
-  feature/wave3-reception-endpoints, feature/wave4-admin-endpoints,
-  feature/wave5-reporting-and-audit.
+- Branch per wave: feature/reconcile-source-of-truth (Wave 0), feature/wave1-public-endpoints
+  (Waves 1, from Wave 0 tip), feature/wave2-customer-endpoints, feature/wave3-reception-endpoints,
+  feature/wave4-admin-endpoints, feature/wave5-reporting-and-audit.
 - One logical feature per branch; commit after each green build/test; PR before merge.
 - Re-read this file and the SoT at the start of every session.
 
-STATUS: reconciliation in progress (WAVE 0). No remote configured yet - awaiting GitHub repo.
+STATUS: Waves 0-6 implemented plus v1.3-v1.5 (payment lists, date-based room board, anonymous
+cancel, transactional email, operational policies). Solution builds with 0 errors (0 NU1902);
+test suite: UnitTests 14, ArchitectureTests 3, IntegrationTests 31 + PolicyTests 3 (run pending
+on the owner's local PostgreSQL).
+Next (owner): smoke-test all endpoints against deutchezz_dev, run dotnet test, then commit per
+wave and open PRs.
+NOTE (for the owner): integration tests require local PostgreSQL; the test host creates and migrates
+deutchezz_test automatically and reads the local password from user secrets (or set
+DEUTCHEZZ_TEST_CONNECTION). Docker/Testcontainers is not used on this machine.

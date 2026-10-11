@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
@@ -9,31 +10,90 @@ namespace Deutchezz.Application.Rooms;
 
 public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IRoomsService
 {
-    public async Task<Result<PaginatedResult<RoomResponse>>> ListAsync(RoomQuery query, CancellationToken cancellationToken)
+    public async Task<Result<PaginatedResult<RoomListItemResponse>>> ListAsync(RoomQuery query, CancellationToken cancellationToken)
     {
         var q = db.Rooms.AsQueryable();
 
-        if (query.Status is RoomBoardFilter board)
+        if (query.RoomTypeId is not null)
+            q = q.Where(r => r.RoomTypeId == query.RoomTypeId);
+
+        // Date-based board: when a date is supplied, "Occupied" means a room assigned to a
+        // Confirmed/CheckedIn booking that covers that date, independent of the stored physical
+        // status. Without a date we fall back to the physical status (unchanged behaviour).
+        List<Guid>? occupiedRoomIds = null;
+        if (query.Date is DateOnly date)
+        {
+            occupiedRoomIds = await OccupiedRoomIdsAsync(date, cancellationToken);
+            var board = query.Status ?? RoomBoardFilter.All;
+            q = board switch
+            {
+                RoomBoardFilter.Maintenance => q.Where(r => r.Status == RoomStatus.Maintenance),
+                RoomBoardFilter.Inactive => q.Where(r => r.Status == RoomStatus.Inactive),
+                RoomBoardFilter.Occupied => q.Where(r => r.Status != RoomStatus.Maintenance && r.Status != RoomStatus.Inactive
+                    && occupiedRoomIds.Contains(r.Id)),
+                RoomBoardFilter.Available => q.Where(r => r.Status == RoomStatus.Available && !occupiedRoomIds.Contains(r.Id)),
+                _ => q
+            };
+        }
+        else if (query.Status is RoomBoardFilter board)
         {
             var status = MapBoardFilter(board);
             if (status is not null)
                 q = q.Where(r => r.Status == status);
         }
 
-        if (query.RoomTypeId is not null)
-            q = q.Where(r => r.RoomTypeId == query.RoomTypeId);
+        var joined = q.Join(db.RoomTypes, r => r.RoomTypeId, rt => rt.Id,
+            (r, rt) => new { Room = r, RoomTypeName = rt.Name });
 
-        var total = await q.CountAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var search = query.Search.Trim();
+            joined = joined.Where(x => x.Room.RoomNumber.Contains(search) || x.RoomTypeName.Contains(search));
+        }
 
-        var queryable = await q
-            .Join(db.RoomTypes, r => r.RoomTypeId, rt => rt.Id,
-                (r, rt) => new RoomResponse(r.Id, r.RoomNumber, r.RoomTypeId, rt.Name, r.Status.ToString(), r.Floor, r.IsActive))
-            .OrderBy(r => r.RoomNumber)
-            .Skip((query.PageNumber - 1) * query.PageSize)
+        var total = await joined.CountAsync(cancellationToken);
+
+        var descending = query.IsDescending;
+        var ordered = query.Sort?.Trim().ToLowerInvariant() switch
+        {
+            "status" => Order(joined, x => x.Room.Status, descending),
+            "floor" => Order(joined, x => x.Room.Floor, descending),
+            "roomtypename" => Order(joined, x => x.RoomTypeName, descending),
+            _ => Order(joined, x => x.Room.RoomNumber, descending)
+        };
+
+        var rows = await ordered
+            .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
+            .Select(x => new { x.Room.Id, x.Room.RoomNumber, x.Room.RoomTypeId, x.RoomTypeName, x.Room.Status, x.Room.Floor })
             .ToListAsync(cancellationToken);
 
-        return new PaginatedResult<RoomResponse>(queryable, total, query.PageNumber, query.PageSize);
+        var items = rows
+            .Select(x => new RoomListItemResponse(
+                x.Id, x.RoomNumber, x.RoomTypeId, x.RoomTypeName, x.Status.ToString(), x.Floor,
+                EffectiveStatus(x.Status, x.Id, query.Date, occupiedRoomIds)))
+            .ToList();
+
+        return new PaginatedResult<RoomListItemResponse>(items, total, query.Page, query.PageSize);
+
+        static IOrderedQueryable<T> Order<T, TKey>(IQueryable<T> source, Expression<Func<T, TKey>> key, bool descending) =>
+            descending ? source.OrderByDescending(key) : source.OrderBy(key);
+    }
+
+    private async Task<List<Guid>> OccupiedRoomIdsAsync(DateOnly date, CancellationToken cancellationToken) =>
+        await db.RoomAssignments
+            .Where(ra => ra.ReleasedAt == null)
+            .Join(db.Bookings.Where(b => (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
+                    && b.CheckInDate <= date && b.CheckOutDate > date),
+                ra => ra.BookingId, b => b.Id, (ra, b) => ra.RoomId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+    private static string EffectiveStatus(RoomStatus physical, Guid roomId, DateOnly? date, List<Guid>? occupied)
+    {
+        if (date is null || physical is RoomStatus.Maintenance or RoomStatus.Inactive)
+            return physical.ToString();
+        return occupied!.Contains(roomId) ? nameof(RoomStatus.Occupied) : nameof(RoomStatus.Available);
     }
 
     public async Task<Result<RoomResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken)
@@ -46,7 +106,7 @@ public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IR
         if (room is null)
             return Error.NotFound("room.not_found", "Room not found");
 
-        return new RoomResponse(room.Room.Id, room.Room.RoomNumber, room.Room.RoomTypeId, room.RTypeName, room.Room.Status.ToString(), room.Room.Floor, room.Room.IsActive);
+        return new RoomResponse(room.Room.Id, room.Room.RoomNumber, room.Room.RoomTypeId, room.RTypeName, room.Room.Status.ToString(), room.Room.Floor, room.Room.IsActive, room.Room.Status.ToString());
     }
 
     public async Task<Result<RoomResponse>> CreateAsync(CreateRoomRequest request, Guid adminUserId, CancellationToken cancellationToken)

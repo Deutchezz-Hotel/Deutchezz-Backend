@@ -5,13 +5,14 @@ namespace Deutchezz.Application.Bookings;
 
 public interface IBookingService
 {
-    Task<Result<CreateBookingResponse>> CreateAsync(CreateBookingRequest request, Guid? userId, CancellationToken cancellationToken);
-    Task<Result<BookingResponse>> LookupAsync(BookingLookupRequest request, CancellationToken cancellationToken);
-    Task<Result<BookingResponse>> CancelAsync(Guid? id, BookingLookupRequest? lookup, string? reason, Guid? userId, CancellationToken cancellationToken);
-    Task<Result<BookingResponse>> GetByIdForOwnerAsync(Guid id, Guid userId, CancellationToken cancellationToken);
-    Task<Result<PaginatedResult<BookingSummaryResponse>>> SearchAsync(BookingSearchQuery query, CancellationToken cancellationToken);
-    Task<Result<BookingResponse>> GetDetailAsync(Guid id, CancellationToken cancellationToken);
-    Task<Result<BookingResponse>> AssignRoomsAsync(Guid id, RoomAssignmentRequest request, Guid staffUserId, CancellationToken cancellationToken);
-    Task<Result<BookingResponse>> CheckInAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken);
-    Task<Result<BookingResponse>> CheckOutAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken);
+    Task<Result<CreateBookingResponse>> CreateAsync(CreateBookingRequest request, Guid? userId, string idempotencyKey, CancellationToken cancellationToken);
+    Task<Result<BookingDetailResponse>> LookupAsync(BookingLookupRequest request, CancellationToken cancellationToken);
+    Task<Result<BookingDetailResponse>> CancelAsync(Guid? id, BookingLookupRequest? lookup, string? reason, Guid? userId, CancellationToken cancellationToken);
+    Task<Result<BookingDetailResponse>> GetByIdForOwnerAsync(Guid id, Guid userId, CancellationToken cancellationToken);
+    Task<Result<PaginatedResult<BookingListItemResponse>>> ListForCustomerAsync(Guid userId, BookingSearchQuery query, CancellationToken cancellationToken);
+    Task<Result<PaginatedResult<BookingListItemResponse>>> SearchAsync(BookingSearchQuery query, CancellationToken cancellationToken);
+    Task<Result<BookingDetailResponse>> GetDetailAsync(Guid id, CancellationToken cancellationToken);
+    Task<Result<BookingDetailResponse>> AssignRoomsAsync(Guid id, RoomAssignmentRequest request, Guid staffUserId, CancellationToken cancellationToken);
+    Task<Result<CheckInResponse>> CheckInAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken);
+    Task<Result<CheckOutResponse>> CheckOutAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken);
 }
