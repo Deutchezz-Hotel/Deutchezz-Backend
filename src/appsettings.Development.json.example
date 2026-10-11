@@ -7,5 +7,10 @@
   },
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Port=5432;Database=deutchezz_dev;Username=postgres;Password=CHANGE_ME"
+  },
+  "Cloudinary": {
+    "CloudName": "",
+    "ApiKey": "",
+    "ApiSecret": ""
   }
 }
