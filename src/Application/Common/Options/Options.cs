@@ -43,6 +43,15 @@ public sealed class SettingsOptions
     public int MaxRoomsPerBooking { get; set; } = 20;
     public string CheckInTime { get; set; } = "14:00";
     public string CheckOutTime { get; set; } = "12:00";
+    public bool RequireFullPaymentAtCheckIn { get; set; }
+    public bool RequirePaymentBeforeCheckOut { get; set; }
+}
+
+public sealed class JobsOptions
+{
+    public const string SectionName = "Jobs";
+
+    public int PendingExpiryIntervalMinutes { get; set; } = 15;
 }
 
 public sealed class CorsOptions

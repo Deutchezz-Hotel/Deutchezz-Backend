@@ -49,6 +49,12 @@ public static class OptionsExtensions
             .Validate(o => TimeOnly.TryParse(o.CheckOutTime, out _), "Settings:CheckOutTime must be a time such as 12:00.")
             .ValidateOnStart();
 
+        services.AddOptions<JobsOptions>()
+            .Bind(configuration.GetSection(JobsOptions.SectionName))
+            .Validate(o => o.PendingExpiryIntervalMinutes > 0,
+                "Jobs:PendingExpiryIntervalMinutes must be greater than 0.")
+            .ValidateOnStart();
+
         services.AddOptions<CorsOptions>()
             .Bind(configuration.GetSection(CorsOptions.SectionName))
             .Validate(
@@ -86,5 +92,6 @@ public static class OptionsExtensions
         _ = services.GetRequiredService<IOptions<CorsOptions>>().Value;
         _ = services.GetRequiredService<IOptions<RateLimitingOptions>>().Value;
         _ = services.GetRequiredService<IOptions<EmailOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<JobsOptions>>().Value;
     }
 }

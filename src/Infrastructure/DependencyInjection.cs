@@ -6,7 +6,9 @@ using Deutchezz.Domain.Entities;
 using Deutchezz.Infrastructure.Data;
 using Deutchezz.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,6 +62,32 @@ public static class DependencyInjection
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.Key)),
                     RoleClaimType = "role",
                     NameClaimType = "sub"
+                };
+                jwtOptions.Events = new JwtBearerEvents
+                {
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        await context.Response.WriteAsJsonAsync(new ProblemDetails
+                        {
+                            Status = StatusCodes.Status401Unauthorized,
+                            Title = "Unauthorized.",
+                            Type = "https://httpstatuses.com/401",
+                            Detail = "Authentication is required to access this resource."
+                        }, options: null, contentType: "application/problem+json");
+                    },
+                    OnForbidden = async context =>
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await context.Response.WriteAsJsonAsync(new ProblemDetails
+                        {
+                            Status = StatusCodes.Status403Forbidden,
+                            Title = "Forbidden.",
+                            Type = "https://httpstatuses.com/403",
+                            Detail = "You do not have permission to perform this action."
+                        }, options: null, contentType: "application/problem+json");
+                    }
                 };
             });
 

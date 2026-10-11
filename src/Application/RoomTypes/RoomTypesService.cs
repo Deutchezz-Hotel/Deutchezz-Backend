@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
@@ -11,7 +12,17 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
     private const int MaxImageUrls = 8;
     private const int MaxFeatures = 20;
 
-    public async Task<Result<PaginatedResult<RoomTypeResponse>>> ListAsync(RoomTypeQuery query, CancellationToken cancellationToken)
+    private static readonly Dictionary<string, Expression<Func<Domain.Entities.RoomType, object>>> Sortable =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["name"] = rt => rt.Name,
+            ["basePrice"] = rt => rt.BasePrice,
+            ["maximumOccupancy"] = rt => rt.MaximumOccupancy,
+            ["isActive"] = rt => rt.IsActive,
+            ["createdAt"] = rt => rt.CreatedAt
+        };
+
+    public async Task<Result<PaginatedResult<RoomTypeListItemResponse>>> ListAsync(RoomTypeQuery query, CancellationToken cancellationToken)
     {
         var q = db.RoomTypes.AsQueryable();
         if (!query.IncludeInactive)
@@ -22,13 +33,13 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
 
         var total = await q.CountAsync(cancellationToken);
         var items = await q
-            .OrderBy(rt => rt.BasePrice)
-            .Skip((query.PageNumber - 1) * query.PageSize)
+            .ApplySort(query, Sortable, qq => qq.OrderBy(rt => rt.BasePrice))
+            .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
-            .Select(rt => ToResponse(rt))
+            .Select(rt => new RoomTypeListItemResponse(rt.Id, rt.Name, rt.BasePrice, rt.MaximumOccupancy, rt.BedType, rt.IsActive))
             .ToListAsync(cancellationToken);
 
-        return new PaginatedResult<RoomTypeResponse>(items, total, query.PageNumber, query.PageSize);
+        return new PaginatedResult<RoomTypeListItemResponse>(items, total, query.Page, query.PageSize);
     }
 
     public async Task<Result<RoomTypeResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken)

@@ -1,7 +1,7 @@
 # DEUTCHEZZ HOTEL ISPAHAN — BACKEND SOURCE OF TRUTH
 
 **Domain model, business rules & API contract**
-**Version 1.1** · Location: Ahmadu Bello Way, Jos, Plateau State, Nigeria
+**Version 1.5** · Location: Ahmadu Bello Way, Jos, Plateau State, Nigeria
 
 Canonical backend design reference, to be used before and during implementation.
 
@@ -68,6 +68,98 @@ New/confirmed rules recorded in v1.1:
 Still open (not implemented): pending/unpaid booking expiry, cancellation window and refund rules,
 check-in payment rule, check-out balance rule, no-show status, guest data retention, the full room
 catalogue beyond the three seeded types.
+
+### v1.2 — 2026-10-10 (Wave 6: contract conformance & test coverage)
+
+Owner-approved conformance work. No new domain entities and no new routes; it pins down shapes the
+v1.1 conventions already required.
+
+- **Errors are RFC 7807 `ProblemDetails` on every failure path** (validation 400, unauthenticated 401,
+  forbidden 403, not found 404, conflict 409, concurrency 409, rate-limited 429, unhandled 500). In
+  addition to the standard members, `ProblemDetails` carries a machine-readable `code` extension
+  (e.g. `booking.insufficient_availability`). Model-binding failures from `[ApiController]` keep the
+  framework `ValidationProblemDetails` shape with an `errors` field map.
+- **List endpoints accept optional `sort` (field name) and `direction` (`asc`|`desc`)**, in addition to
+  `page`/`pageSize`. An unknown/blank `sort` falls back to the endpoint default; an unknown `direction`
+  falls back to `asc`. The `PagedResult` envelope and its defaults are unchanged.
+- **Concrete list/detail DTO families are fixed** (implementations of the §8 catalog): 
+  `BookingListItemResponse` (list) vs `BookingDetailResponse` (detail),
+  `RoomListItemResponse` vs `RoomResponse`, `RoomTypeListItemResponse` vs `RoomTypeResponse`,
+  `PaymentListItemResponse` vs `PaymentResponse`, plus `CheckInResponse`, `CheckOutResponse`,
+  `RoomAssignmentResponse` and `NotificationResponse`. List DTOs stay lightweight; detail DTOs are rich.
+- **Integration test project is exercised** against a dedicated `deutchezz_test` database covering the
+  critical paths: auth, availability search, booking create (idempotency replay + conflict), lookup,
+  reception assign/check-in/check-out, admin inventory/staff/settings CRUD and dashboard/reports.
+
+Conformance defects fixed while implementing v1.2 (all were latent 500s on previously untested paths):
+- **List ordering is applied to a translatable projection.** Ordering by a member of a constructed DTO
+  could not be translated by EF Core; affected room listing ordered by an anonymous join projection and
+  mapped to the response DTO only after materialization.
+- **All 401/403/429 responses are `application/problem+json`.** Writing via `WriteAsJsonAsync` after
+  setting `ContentType` reset it to `application/json`; the content type is now passed to the writer.
+- **Date range filters use UTC bounds.** Bounds were built with `DateTime` `Kind=Unspecified`, which
+  Npgsql rejects for `timestamp with time zone` columns; day boundaries are now UTC (`UtcStartOfDay`).
+
+### v1.3 — 2026-10-11 (payment lists for reception + richer list rows)
+
+- **Reception can list payments.** New endpoint `GET /api/v1/reception/payments`
+  (Receptionist/Admin, same `PaymentQuery` filters and `sort`/`direction`/paging as the admin list).
+  Previously only `POST /api/v1/reception/payments` existed.
+- **`PaymentListItemResponse` enriched** for payment tables: it now also returns
+  `BookingReference`, `GuestName` and `Reference` (the payment transaction reference) in addition to
+  `Id, BookingId, Amount, Method, Status, CreatedAt`. This makes the admin and reception payment tables
+  show booking reference, client name and transaction reference without a per-row detail lookup.
+
+### v1.4 — 2026-10-11 (date-based room board, anonymous cancellation, transactional email)
+
+- **Date-based room availability board.** The room list endpoints
+  (`GET /api/v1/admin/rooms`, `GET /api/v1/reception/rooms`) accept `date` (`yyyy-MM-dd`, default
+  today) and `search` (matches room number or room type name). For the requested date a room's
+  **effective status** is: `Maintenance`/`Inactive` when the physical status says so; otherwise
+  `Occupied` when an active `RoomAssignment` to a `Confirmed`/`CheckedIn` booking covers the date
+  (`CheckInDate ≤ date < CheckOutDate`); otherwise `Available`. Both `RoomResponse` and
+  `RoomListItemResponse` now return `effectiveStatus` alongside the physical `status`. The status
+  filter now matches the effective status for the requested date. This makes the board reflect real
+  occupancy per date instead of the last check-in/check-out mutation.
+- **Physical room double-assignment is rejected.** `AssignRooms` now returns **409**
+  (`booking.room_unavailable`) if a requested room is already held by another live
+  (`Confirmed`/`CheckedIn`) booking whose dates overlap (BR-023). Previously overlapping assignments
+  were silently allowed.
+- **Anonymous booking cancellation.** New public endpoint `POST /api/v1/bookings/cancel`
+  (`AnonymousCancelBookingRequest { bookingReference, email, reason? }`, rate limit `lookup`),
+  mirroring lookup ownership. Registered customers continue to use
+  `POST /api/v1/me/bookings/{id}/cancel`.
+- **Transactional emails are now sent.** Booking confirmation, cancellation confirmation, payment
+  receipt and check-in/check-out notices are HTML emails built in the Application layer
+  (`Deutchezz.Application.Emails`) and delivered through `IEmailSender`. `SmtpEmailSender` never
+  throws — a delivery failure is logged and never fails the business operation. With no SMTP
+  credentials configured the logging sender is used.
+
+### v1.5 — 2026-10-11 (operational policies: expiry, cancellation window & refund, payment gates)
+
+Resolved by owner decision (§15). These policies are configurable and **default to the least
+restrictive behaviour**, so out-of-the-box flows (pay-at-hotel, check-in without prepayment, receipts
+recorded after the stay) are unchanged:
+
+- **Pending booking expiry (7e).** A `Pending` booking is auto-cancelled when it has been `Pending`
+  for longer than `Cancellation:WindowHours`. A background worker runs every
+  `Jobs.PendingExpiryIntervalMinutes` (default 15) minutes, marks the booking `Cancelled` with reason
+  "Expired reservation", writes an ActivityLog (`booking.expired`, actor null) and posts a
+  `BookingCancelled` notification only when the guest has an account. No email is sent. Under the
+  current pay-at-hotel model nothing creates `Pending` bookings yet (created `Confirmed`), so the job
+  is dormant-but-correct and activates with the future online-payment flow.
+- **Cancellation window (7d).** A booking can be cancelled without charge only until
+  `Cancellation:WindowHours` hours **before the check-in day starts** in Africa/Lagos. When the
+  deadline has passed, guest and anonymous cancels are rejected with **409**
+  `booking.cancellation_window_closed`. Reception/administrators have no cancel endpoint, so the rule
+  is uniform.
+- **Refund rule (7d).** On any permitted cancellation, all `Paid` `Payment` rows for the booking are
+  marked `Refunded`, `Booking.PaymentStatus` becomes `Refunded`, and the cancellation email states the
+  refunded amount. Because late cancellations are blocked, no partial fee is computed.
+- **Payment gates (7f).** New settings `Settings:RequireFullPaymentAtCheckIn` and
+  `Settings:RequirePaymentBeforeCheckOut` (both default `false`). When a gate is on, check-in/check-out
+  with an outstanding balance returns **409** `booking.balance_outstanding`. Both are editable through
+  the admin settings API/page; no DB migration is needed (key/value `Setting` rows).
 
 ### v1.0 — baseline
 Original document (archived as `Deut_Source of Truth.txt`).
@@ -146,8 +238,8 @@ IdempotencyRequestHash (nullable), CreatedAt, UpdatedAt.
 **BookingRoomType** — Id, BookingId, RoomTypeId, Quantity, RatePerNight, NumberOfNights, Subtotal.
 *Reservation line describing room type and quantity; preserves agreed rate.*
 
-**RoomAssignment** — Id, BookingId, BookingRoomTypeId, RoomId, AssignedAt, AssignedByUserId.
-*Maps reserved quantities to actual physical rooms.*
+**RoomAssignment** — Id, BookingId, BookingRoomTypeId, RoomId, AssignedAt, AssignedByUserId, ReleasedAt (nullable).
+*Maps reserved quantities to actual physical rooms; `ReleasedAt IS NULL` means the assignment is still live.*
 
 **Payment** — Id, BookingId, Amount, PaymentMethod, Status, Reference, PaidAt, RecordedByUserId, Notes, CreatedAt.
 *One payment event; multiple payments may belong to one booking.*
@@ -198,6 +290,8 @@ numbers. Reception later assigns actual rooms such as Deluxe → 101, Deluxe →
 - **BR-020** Important administrative and operational actions generate audit records.
 - **BR-021** The initial 20 rooms are sample inventory only; administrators can add more.
 - **BR-022** Booking/inventory changes use transactions and concurrency controls sufficient to prevent overbooking.
+- **BR-023** A physical room cannot be assigned to two overlapping live (`Confirmed`/`CheckedIn`)
+  bookings; a conflicting assignment request is rejected with **409**.
 
 ### 7a. Pricing
 
@@ -245,13 +339,51 @@ numbers. Reception later assigns actual rooms such as Deluxe → 101, Deluxe →
   adults ≥ 1; children ≥ 0; total rooms between 1 and `Settings:MaxRoomsPerBooking`; every room type
   exists and is active; guest email format; phone present; quantities positive.
 
+### 7d. Booking cancellation (window & refund)
+
+- Authority: registered owner via `POST /api/v1/me/bookings/{id}/cancel`; anonymous via reference +
+  email on `POST /api/v1/bookings/cancel`. Both route to the same `CancelAsync`.
+- **Window (BR-024):** cancellation is allowed, free of charge, until `Cancellation:WindowHours` hours
+  before the check-in day start in Africa/Lagos (00:00 local on `CheckInDate`, minus the window). A
+  cancellation attempted after that deadline fails with **409** `booking.cancellation_window_closed`.
+  This applies to `Pending` and `Confirmed` bookings alike.
+- **Refund (BR-025):** on a permitted cancellation every `Payment` row with `Status = Paid` is set to
+  `Refunded`, the booking's `PaymentStatus` becomes `Refunded`, and the cancellation email names the
+  refunded amount. Partial-penalty calculations are intentionally avoided because late cancellations
+  are blocked.
+- Recording: `CancelledAt = now (UTC)`, `CancellationReason = reason`, concurrency token bumped,
+  ActivityLog (`booking.cancelled`) and a `BookingCancelled` notification (registered guests only).
+  Blocks: already `Cancelled`/`CheckedIn`/`CheckedOut` → 409; registered owner must own the booking.
+
+### 7e. Pending booking expiry (background job)
+
+- Scope: `BookingStatus.Pending` only. Pay-at-hotel bookings are created `Confirmed` and are never
+  touched by this job.
+- Trigger: a `Pending` booking is expired once `CreatedAt ≤ now − Cancellation:WindowHours`.
+- Worker: `PendingBookingExpiryWorker` (`BackgroundService`, Application layer), runs every
+  `Jobs:PendingExpiryIntervalMinutes` minutes (default 15, validated `> 0`). Idle-safe: a single query
+  finds nothing and the cycle sleeps.
+- Expiry: status → `Cancelled`, `CancelledAt = now (UTC)`, `CancellationReason = "Expired reservation"`,
+  concurrency token bumped, ActivityLog (`booking.expired`, actor null, entity Booking) and a
+  `BookingCancelled` notification only when the guest has a UserId. No email is sent.
+
+### 7f. Payment gates at check-in and check-out
+
+- `Settings:RequireFullPaymentAtCheckIn` (default `false`): when `true`, check-in is rejected with
+  **409** `booking.balance_outstanding` while `paid < TotalAmount`.
+- `Settings:RequirePaymentBeforeCheckOut` (default `false`): when `true`, check-out is rejected with
+  **409** `booking.balance_outstanding` while `paid < TotalAmount`.
+- `paid` = Σ of `Payment` rows with `Status = Paid` for the booking. Both settings are DB-backed
+  (`Setting` key/value rows, no migration) with appsettings fallback, and editable via
+  `GET/PUT /api/v1/admin/settings` and the admin Settings page.
+
 ## 8. DTO / CONTRACT CATALOG
 
 | Area | Request DTOs | Response DTOs |
 | --- | --- | --- |
 | Auth | RegisterRequest, LoginRequest | LoginResponse, CurrentUserResponse |
 | Availability | AvailabilitySearchRequest | AvailabilityResponse, AvailableRoomTypeResponse |
-| Booking | CreateBookingRequest, BookingLookupRequest, CancelBookingRequest | BookingResponse, BookingSummaryResponse, BookingDetailResponse, BookingListItemResponse |
+| Booking | CreateBookingRequest, BookingLookupRequest, CancelBookingRequest, AnonymousCancelBookingRequest | BookingResponse, BookingSummaryResponse, BookingDetailResponse, BookingListItemResponse |
 | Assignment | AssignRoomsRequest | RoomAssignmentResponse |
 | Stay | CheckInRequest, CheckOutRequest | CheckInResponse, CheckOutResponse |
 | Rooms | CreateRoomRequest, UpdateRoomRequest | RoomResponse, RoomListItemResponse |
@@ -282,6 +414,7 @@ DTO rules:
 | Availability | POST | /api/v1/availability/search | Public |
 | Booking | POST | /api/v1/bookings | Public/Auth |
 | Booking lookup | POST | /api/v1/bookings/lookup | Public |
+| Booking cancel | POST | /api/v1/bookings/cancel | Public |
 | Customer | GET | /api/v1/me/bookings | Customer |
 | Customer | GET | /api/v1/me/bookings/{id} | Customer |
 | Customer | POST | /api/v1/me/bookings/{id}/cancel | Customer |
@@ -295,6 +428,7 @@ DTO rules:
 | Reception | POST | /api/v1/reception/bookings/{id}/check-out | Receptionist/Admin |
 | Reception | GET | /api/v1/reception/rooms | Receptionist/Admin |
 | Reception | GET | /api/v1/reception/guests | Receptionist/Admin |
+| Reception | GET | /api/v1/reception/payments | Receptionist/Admin |
 | Reception | POST | /api/v1/reception/payments | Receptionist/Admin |
 | Admin | GET | /api/v1/admin/dashboard | Administrator |
 | Admin | GET, POST | /api/v1/admin/rooms | Administrator |
@@ -338,28 +472,34 @@ AssignRoomsRequest
                    { "bookingRoomTypeId": "LINE-2", "roomId": "ROOM-201" } ] }
 
 RecordPaymentRequest
-{ "bookingId": "BOOKING-ID", "amount": 100000, "paymentMethod": "POS",
+{ "bookingId": "BOOKING-ID", "amount": 100000, "method": "POS",
   "reference": "POS-REF-001", "notes": "Initial deposit" }
 ```
 
 ## 11. STATE TRANSITIONS
 
-Booking: `Pending → Confirmed → CheckedIn → CheckedOut`; `Pending → Cancelled`; `Confirmed → Cancelled`.
+Booking: `Pending → Confirmed → CheckedIn → CheckedOut`; `Pending → Cancelled`; `Confirmed → Cancelled`;
+`Pending → Cancelled` also happens via automatic expiry (7e) after the pending window elapses.
 The backend must reject illegal ordinary transitions such as `CheckedOut → Pending`.
 New bookings are created directly at `Confirmed` under the pay-at-hotel model.
 
 Room: `Available ↔ Occupied`; `Available → Maintenance → Available`; operational state → `Inactive` when retired.
 Room availability for future dates is reservation/assignment driven and is not the same as current `RoomStatus`.
+The room list's `effectiveStatus` for a given `date` is derived from assignments (see v1.4), while
+`status` remains the persisted physical state.
 
 ## 12. CONTRACT CONVENTIONS
 
 - JSON: **camelCase** properties; enums serialized as **strings** using these exact names
   (`JsonStringEnumConverter`); dates as `"yyyy-MM-dd"`; money as decimal numbers.
-- Errors: **RFC 7807 ProblemDetails** everywhere.
+- Errors: **RFC 7807 ProblemDetails** everywhere, with a machine-readable `code` extension
+  (e.g. `booking.insufficient_availability`); model-binding failures use `ValidationProblemDetails`
+  with an `errors` field map.
 - HTTP mapping: validation → 400, unauthenticated → 401, forbidden → 403, not found → 404,
   conflict/insufficient availability/idempotency mismatch → 409, rate limited → 429.
 - Lists: `PagedResult` envelope `{ items, page, pageSize, totalCount, totalPages }` with
-  `page` (default 1), `pageSize` (default 20, max 100), optional `sort` / `direction`.
+  `page` (default 1), `pageSize` (default 20, max 100), optional `sort` (field name) and
+  `direction` (`asc`|`desc`); unknown `sort` uses the endpoint default, unknown `direction` uses `asc`.
 - All timestamps are stored in UTC; business dates use `Africa/Lagos`.
 - Logging: `ILogger` with structured message templates (satisfies "structured logging").
 - Secrets only in user secrets / environment; never committed.
@@ -382,7 +522,8 @@ Room availability for future dates is reservation/assignment driven and is not t
 - CORS: named policy `Frontend`, origins from `Cors:AllowedOrigins` (default `http://localhost:5173`,
   `http://localhost:3000`), any header/method, no credentials (JWT in the Authorization header).
 - Email: Gmail SMTP behind `IEmailSender` (SmtpEmailSender); falls back to a logging sender when
-  credentials are absent; send failures never fail a booking.
+  credentials are absent; send failures never fail a booking. Booking confirmation, cancellation,
+  payment receipt and check-in/check-out notices are delivered as branded HTML emails.
 
 ## 14. EXPLICITLY DEFERRED
 
@@ -402,12 +543,12 @@ Room availability for future dates is reservation/assignment driven and is not t
 | Exact room catalogue | Admin-configurable; prototype room types are not authoritative. |
 | ~~Meaning of n30k/n40k/n55k~~ | **Resolved (v1.1):** per-night price of a room type. |
 | Taxes/fees | Do not add until hotel policy is confirmed. |
-| Cancellation policy | Define cancellation window and refund rules. |
+| ~~Cancellation policy~~ | **Resolved (v1.5):** free cancellation until `WindowHours` before check-in (7d); paid amounts fully refunded on permitted cancels. |
 | No-show | Add NoShow status if required by hotel operations (not added). |
-| Check-in payment rule | Configurable; do not hardcode full payment without confirmation. |
-| Check-out outstanding balance | Configurable; confirm hotel policy. |
+| ~~Check-in payment rule~~ | **Resolved (v1.5):** configurable gate `RequireFullPaymentAtCheckIn`, default off (7f). |
+| ~~Check-out outstanding balance~~ | **Resolved (v1.5):** configurable gate `RequirePaymentBeforeCheckOut`, default off (7f). |
 | Room assignment | Assign before check-in is recommended. |
-| Pending booking expiry | Define whether unpaid/pending reservations expire automatically. |
+| ~~Pending booking expiry~~ | **Resolved (v1.5):** `Pending` expires after `Cancellation:WindowHours` via background job (7e). |
 | Guest data retention | Define retention/privacy policy with the hotel. |
 
 ## 16. SOURCE-OF-TRUTH GOVERNANCE

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
 using Deutchezz.Domain.Common;
@@ -7,6 +8,14 @@ namespace Deutchezz.Application.Notifications;
 
 public class NotificationService(IAppDbContext db) : INotificationService
 {
+    private static readonly Dictionary<string, Expression<Func<Domain.Entities.Notification, object>>> Sortable =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["createdAt"] = n => n.CreatedAt,
+            ["isRead"] = n => n.IsRead,
+            ["type"] = n => n.Type
+        };
+
     public async Task<Result<PaginatedResult<NotificationResponse>>> ListAsync(Guid userId, NotificationQuery query, CancellationToken cancellationToken)
     {
         var q = db.Notifications.Where(n => n.UserId == userId);
@@ -16,13 +25,13 @@ public class NotificationService(IAppDbContext db) : INotificationService
 
         var total = await q.CountAsync(cancellationToken);
         var items = await q
-            .OrderByDescending(n => n.CreatedAt)
-            .Skip((query.PageNumber - 1) * query.PageSize)
+            .ApplySort(query, Sortable, qq => qq.OrderByDescending(n => n.CreatedAt))
+            .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
             .Select(n => new NotificationResponse(n.Id, n.Type.ToString(), n.Title, n.Message, n.IsRead, n.CreatedAt))
             .ToListAsync(cancellationToken);
 
-        return new PaginatedResult<NotificationResponse>(items, total, query.PageNumber, query.PageSize);
+        return new PaginatedResult<NotificationResponse>(items, total, query.Page, query.PageSize);
     }
 
     public async Task<Result> MarkAsReadAsync(Guid id, Guid userId, CancellationToken cancellationToken)

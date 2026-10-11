@@ -62,7 +62,6 @@ builder.Services.AddRateLimiter(options =>
     options.OnRejected = async (context, cancellationToken) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-        context.HttpContext.Response.ContentType = "application/problem+json";
         await context.HttpContext.Response.WriteAsJsonAsync(
             new ProblemDetails
             {
@@ -72,6 +71,7 @@ builder.Services.AddRateLimiter(options =>
                 Detail = "Too many requests. Please try again later."
             },
             problemJsonOptions,
+            contentType: "application/problem+json",
             cancellationToken);
     };
 
@@ -108,7 +108,7 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddApiVersioning(options =>
 {
     options.DefaultApiVersion = new ApiVersion(1, 0);
-    options.AssumeDefaultVersionWhenUnspecified = true;
+options.AssumeDefaultVersionWhenUnspecified = true;
     options.ReportApiVersions = true;
 });
 
@@ -153,3 +153,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }

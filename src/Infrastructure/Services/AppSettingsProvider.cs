@@ -18,6 +18,10 @@ public class AppSettingsProvider(
 
     public int CancellationWindowHours => cancellation.Value.WindowHours;
 
+    public bool RequireFullPaymentAtCheckIn => _settings.RequireFullPaymentAtCheckIn;
+
+    public bool RequirePaymentBeforeCheckOut => _settings.RequirePaymentBeforeCheckOut;
+
     private static TimeOnly Parse(string value, string fallback) =>
         TimeOnly.TryParse(value, out var time) ? time : TimeOnly.Parse(fallback);
 }

@@ -14,6 +14,11 @@ public record RoomTypeResponse(
     Guid Id, string Name, string? Description, decimal BasePrice, int MaximumOccupancy, string? BedType,
     bool IsActive, List<string> ImageUrls, List<string> Features);
 
+public record RoomTypeListItemResponse(
+    Guid Id, string Name, decimal BasePrice, int MaximumOccupancy, string? BedType, bool IsActive);
+
+public record SetRoomTypeStatusRequest(bool IsActive);
+
 public class RoomTypeQuery : QueryParameters
 {
     private string? _name;

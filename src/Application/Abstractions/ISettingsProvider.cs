@@ -10,4 +10,6 @@ public interface ISettingsProvider
     TimeOnly CheckInTime { get; }
     TimeOnly CheckOutTime { get; }
     int CancellationWindowHours { get; }
+    bool RequireFullPaymentAtCheckIn { get; }
+    bool RequirePaymentBeforeCheckOut { get; }
 }

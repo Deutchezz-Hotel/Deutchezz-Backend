@@ -17,6 +17,7 @@ public interface IAppDbContext
     DbSet<Payment> Payments { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<ActivityLog> ActivityLogs { get; }
+    DbSet<Setting> Settings { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
