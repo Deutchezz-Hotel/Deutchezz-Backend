@@ -46,7 +46,7 @@ Source of Truth v1.1 changelog (**docs/source-of-truth/SOURCE_OF_TRUTH.md**) bef
   Serializable-with-retry because it is deterministic and easy to test. Rationale recorded in SoT 7c.
 - **RoomType display fields** `ImageUrls` (≤ 8) and `Features` (≤ 20) added as `text[]` columns and
   exposed in the room-type DTOs; validation enforces absolute http/https URLs and non-empty trimmed
-  features. Image upload remains deferred.
+  features. Image uploads supported via Cloudinary (admin-only). Max 10MB per image; drag-and-drop and file picker; up to 8 images per room type.
 
 ## Still open (explicitly not implemented, not hardcoded)
 

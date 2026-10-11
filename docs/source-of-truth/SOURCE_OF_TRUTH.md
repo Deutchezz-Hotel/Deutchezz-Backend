@@ -47,7 +47,7 @@ Resolved by owner decision:
 Approved field additions (not in v1.0):
 - `Booking.IdempotencyKey` (nullable, unique index) and `Booking.IdempotencyRequestHash` (nullable).
 - `RoomType.ImageUrls` (list, max 8) and `RoomType.Features` (list, max 20) — display fields only,
-  stored as `text[]`. Image file upload stays deferred; URLs only.
+  stored as `text[]`. Image file uploads supported via Cloudinary (admin-only). Max 10MB, drag-and-drop or file picker; up to 8 images per room type. Server-side validation for type/size; secure upload endpoint..
 - `ActivityLog.UserId` is nullable so anonymous actions can be audited.
 
 Explicitly **not** added (v1.0 stays authoritative): `Booking` has **no** `UserId`, `Subtotal` or
