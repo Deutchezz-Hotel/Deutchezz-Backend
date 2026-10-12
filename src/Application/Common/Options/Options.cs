@@ -82,6 +82,15 @@ public sealed class EmailOptions
 
     public SmtpOptions Smtp { get; set; } = new();
 
+    /// <summary>Inbox that receives a staff alert for every new booking. Empty disables the alert.</summary>
+    public string AdminNotificationAddress { get; set; } = string.Empty;
+
+    /// <summary>Base URL of the web app, used to build links in verification/reset emails.</summary>
+    public string FrontendBaseUrl { get; set; } = "http://localhost:5173";
+
+    /// <summary>When true, unconfirmed accounts are blocked from logging in.</summary>
+    public bool RequireConfirmedEmail { get; set; }
+
     /// <summary>SmtpUsername and SmtpPassword are set via user secrets only.</summary>
     public sealed class SmtpOptions
     {

@@ -72,6 +72,10 @@ public static class OptionsExtensions
         services.AddOptions<EmailOptions>()
             .Bind(configuration.GetSection(EmailOptions.SectionName))
             .Validate(o => o.Smtp.Port > 0 && o.Smtp.Port <= 65535, "Email:Smtp:Port must be a valid TCP port.")
+            .Validate(o => Uri.TryCreate(o.FrontendBaseUrl, UriKind.Absolute, out _),
+                "Email:FrontendBaseUrl must be an absolute URL such as http://localhost:5173.")
+            .Validate(o => string.IsNullOrWhiteSpace(o.AdminNotificationAddress) || o.AdminNotificationAddress.Contains('@'),
+                "Email:AdminNotificationAddress must be a valid email address or left empty.")
             .ValidateOnStart();
 
         return services;

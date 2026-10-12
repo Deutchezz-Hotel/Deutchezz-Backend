@@ -12,5 +12,18 @@
     "CloudName": "",
     "ApiKey": "",
     "ApiSecret": ""
+  },
+  "Email": {
+    "Smtp": {
+      "Host": "smtp.gmail.com",
+      "Port": 587,
+      "Username": "",
+      "Password": "",
+      "FromAddress": "",
+      "FromName": "Deutchezz Hotel Ispahan"
+    },
+    "AdminNotificationAddress": "",
+    "FrontendBaseUrl": "http://localhost:5173",
+    "RequireConfirmedEmail": false
   }
 }

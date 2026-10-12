@@ -36,6 +36,30 @@ public class AuthController(IAuthService authService) : ControllerBase
         return result.ToActionResult();
     }
 
+    [EnableRateLimiting("auth")]
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.ForgotPasswordAsync(request, cancellationToken);
+        return result.ToActionResult();
+    }
+
+    [EnableRateLimiting("auth")]
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.ResetPasswordAsync(request, cancellationToken);
+        return result.ToActionResult();
+    }
+
+    [EnableRateLimiting("auth")]
+    [HttpPost("confirm-email")]
+    public async Task<IActionResult> ConfirmEmail(ConfirmEmailRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.ConfirmEmailAsync(request, cancellationToken);
+        return result.ToActionResult();
+    }
+
     [Authorize]
     [HttpPost("logout")]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)

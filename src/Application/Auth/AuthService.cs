@@ -1,12 +1,15 @@
 using System.Security.Cryptography;
 using System.Text;
 using Deutchezz.Application.Abstractions;
+using Deutchezz.Application.Common.Options;
 using Deutchezz.Application.Data;
+using Deutchezz.Application.Emails;
 using Deutchezz.Domain.Common;
 using Deutchezz.Domain.Entities;
 using Deutchezz.Domain.Enums;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Deutchezz.Application.Auth;
 
@@ -14,7 +17,9 @@ public class AuthService(
     UserManager<User> userManager,
     ITokenService tokenService,
     IAppDbContext db,
-    IActivityLogger activityLogger) : IAuthService
+    IActivityLogger activityLogger,
+    IEmailSender emailSender,
+    IOptions<EmailOptions> emailOptions) : IAuthService
 {
     public async Task<Result<LoginResponse>> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken)
     {
@@ -32,7 +37,7 @@ public class AuthService(
             FirstName = request.FirstName,
             LastName = request.LastName,
             PhoneNumber = request.PhoneNumber,
-            EmailConfirmed = true,
+            EmailConfirmed = false,
             RefreshTokenHash = null,
             RefreshTokenExpiresAt = null
         };
@@ -47,6 +52,8 @@ public class AuthService(
         await activityLogger.LogAsync(user.Id, "user.registered", "User", user.Id,
             $"Registered {request.Email}", cancellationToken);
 
+        await SendVerificationEmailAsync(user, cancellationToken);
+
         var auth = await IssueTokensAsync(user, cancellationToken);
         return auth;
     }
@@ -59,6 +66,10 @@ public class AuthService(
 
         if (!user.IsActive)
             return Error.Forbidden("auth.inactive", "Account is inactive");
+
+        if (emailOptions.Value.RequireConfirmedEmail && !user.EmailConfirmed)
+            return Error.Forbidden("auth.email_unconfirmed",
+                "Please confirm your email address before signing in");
 
         user.LastLoginAt = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
@@ -96,6 +107,98 @@ public class AuthService(
         var role = roles.FirstOrDefault() ?? nameof(UserRole.Customer);
 
         return new CurrentUserResponse(user.Id, user.FirstName ?? "", user.LastName ?? "", user.Email ?? "", role);
+    }
+
+    public async Task<Result<MessageResponse>> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken cancellationToken)
+    {
+        // Always return the same response to avoid leaking whether an account exists.
+        var user = string.IsNullOrWhiteSpace(request.Email)
+            ? null
+            : await userManager.FindByEmailAsync(request.Email);
+
+        if (user is not null && !string.IsNullOrWhiteSpace(user.Email))
+        {
+            var token = await userManager.GeneratePasswordResetTokenAsync(user);
+            var url = BuildFrontendUrl("/reset-password", user.Email, token);
+            var name = $"{user.FirstName} {user.LastName}".Trim();
+            var (subject, html, text) = PasswordResetEmail.Build(new PasswordResetModel(
+                string.IsNullOrWhiteSpace(name) ? "there" : name, url, 60));
+
+            _ = emailSender.SendAsync(user.Email, subject, html, text, cancellationToken);
+
+            await activityLogger.LogAsync(user.Id, "user.password_reset_requested", "User", user.Id, null, cancellationToken);
+        }
+
+        return new MessageResponse("If an account exists for that email address, a reset link has been sent.");
+    }
+
+    public async Task<Result<MessageResponse>> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.NewPassword))
+            return Error.Validation("auth.invalid_input", "Email, token and new password are required");
+
+        var user = await userManager.FindByEmailAsync(request.Email);
+        if (user is null)
+            return Error.Validation("auth.invalid_reset", "The reset link is invalid or has expired");
+
+        var result = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
+        if (!result.Succeeded)
+            return Error.Validation("auth.reset_failed", string.Join(", ", result.Errors.Select(e => e.Description)));
+
+        // Proving control of the reset link also confirms ownership of the email address.
+        if (!user.EmailConfirmed)
+        {
+            user.EmailConfirmed = true;
+            await userManager.UpdateAsync(user);
+        }
+
+        // Invalidate any existing sessions after a password change.
+        user.RefreshTokenHash = null;
+        user.RefreshTokenExpiresAt = null;
+        await db.SaveChangesAsync(cancellationToken);
+
+        await activityLogger.LogAsync(user.Id, "user.password_reset", "User", user.Id, null, cancellationToken);
+        return new MessageResponse("Your password has been reset. You can now sign in.");
+    }
+
+    public async Task<Result<MessageResponse>> ConfirmEmailAsync(ConfirmEmailRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Token))
+            return Error.Validation("auth.invalid_input", "Email and token are required");
+
+        var user = await userManager.FindByEmailAsync(request.Email);
+        if (user is null)
+            return Error.Validation("auth.invalid_token", "The confirmation link is invalid or has expired");
+
+        if (user.EmailConfirmed)
+            return new MessageResponse("Your email address is already confirmed.");
+
+        var result = await userManager.ConfirmEmailAsync(user, request.Token);
+        if (!result.Succeeded)
+            return Error.Validation("auth.invalid_token", "The confirmation link is invalid or has expired");
+
+        await activityLogger.LogAsync(user.Id, "user.email_confirmed", "User", user.Id, null, cancellationToken);
+        return new MessageResponse("Your email address has been confirmed.");
+    }
+
+    private async Task SendVerificationEmailAsync(User user, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(user.Email))
+            return;
+
+        var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
+        var url = BuildFrontendUrl("/verify-email", user.Email, token);
+        var name = $"{user.FirstName} {user.LastName}".Trim();
+        var (subject, html, text) = EmailVerificationEmail.Build(new EmailVerificationModel(
+            string.IsNullOrWhiteSpace(name) ? "there" : name, url));
+
+        _ = emailSender.SendAsync(user.Email, subject, html, text, cancellationToken);
+    }
+
+    private string BuildFrontendUrl(string path, string email, string token)
+    {
+        var baseUrl = emailOptions.Value.FrontendBaseUrl.TrimEnd('/');
+        return $"{baseUrl}{path}?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
     }
 
     private async Task<Result<LoginResponse>> IssueTokensAsync(User user, CancellationToken cancellationToken)

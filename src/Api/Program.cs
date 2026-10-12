@@ -119,6 +119,18 @@ var app = builder.Build();
 // (empty connection string, Jwt:Key < 32 bytes, ...) aborts before any DB access.
 app.Services.ValidateRequiredOptions();
 
+// Make the active transactional email transport obvious in logs so misconfiguration is caught early.
+{
+    var emailOptions = app.Services.GetRequiredService<IOptions<EmailOptions>>().Value;
+    var smtpReady = emailOptions.Smtp.HasCredentials && !string.IsNullOrWhiteSpace(emailOptions.Smtp.FromAddress);
+    app.Logger.LogInformation(
+        "Transactional email transport: {Transport} (host {Host}:{Port}, from {From})",
+        smtpReady ? "SMTP" : "logging fallback (SMTP credentials not configured)",
+        emailOptions.Smtp.Host,
+        emailOptions.Smtp.Port,
+        string.IsNullOrWhiteSpace(emailOptions.Smtp.FromAddress) ? "(none)" : emailOptions.Smtp.FromAddress);
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

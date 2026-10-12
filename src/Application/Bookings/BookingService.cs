@@ -4,12 +4,14 @@ using System.Text;
 using System.Text.Json;
 using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Common;
+using Deutchezz.Application.Common.Options;
 using Deutchezz.Application.Data;
 using Deutchezz.Application.Emails;
 using Deutchezz.Domain.Common;
 using Deutchezz.Domain.Entities;
 using Deutchezz.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Deutchezz.Application.Bookings;
@@ -21,7 +23,8 @@ public class BookingService(
     IBusinessClock businessClock,
     IEmailSender emailSender,
     IActivityLogger activityLogger,
-    ISettingsProvider settings) : IBookingService
+    ISettingsProvider settings,
+    IOptions<EmailOptions> emailOptions) : IBookingService
 {
     private const int MaxNights = 30;
 
@@ -217,6 +220,22 @@ public class BookingService(
             total));
 
         _ = emailSender.SendAsync(request.Guest.Email, subject, html, text, CancellationToken.None);
+
+        var deskAddress = emailOptions.Value.AdminNotificationAddress;
+        if (!string.IsNullOrWhiteSpace(deskAddress))
+        {
+            var (alertSubject, alertHtml, alertText) = StaffNewBookingAlertEmail.Build(new StaffNewBookingAlertModel(
+                booking.BookingReference,
+                $"{request.Guest.FirstName} {request.Guest.LastName}".Trim(),
+                request.Guest.Email,
+                request.Guest.PhoneNumber ?? string.Empty,
+                request.CheckInDate,
+                request.CheckOutDate,
+                nights,
+                emailRooms,
+                total));
+            _ = emailSender.SendAsync(deskAddress, alertSubject, alertHtml, alertText, CancellationToken.None);
+        }
 
         var response = await MapAsync(booking.Id, cancellationToken);
         return new CreateBookingResponse(response, SuggestAccount: userId is null);
