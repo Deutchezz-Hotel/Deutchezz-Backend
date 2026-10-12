@@ -97,7 +97,10 @@ public class PolicyTests(HotelWebApplicationFactory factory) : IntegrationTestBa
         await AssertProblemAsync(blockedCheckOut, (int)HttpStatusCode.Conflict, "booking.balance_outstanding");
 
         await SetGateAsync(staff, "requirePaymentBeforeCheckOut", false);
-        var checkOut = await staff.PostAsync($"/api/v1/reception/bookings/{bookingId}/check-out", content: null);
+        var checkOut = await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{bookingId}/check-out", new
+        {
+            earlyCheckOut = new { reason = "GuestRequest", notes = (string?)null, guestConsented = true }
+        });
         Assert.Equal(HttpStatusCode.OK, checkOut.StatusCode);
     }
 

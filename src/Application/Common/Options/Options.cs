@@ -45,6 +45,7 @@ public sealed class SettingsOptions
     public string CheckOutTime { get; set; } = "12:00";
     public bool RequireFullPaymentAtCheckIn { get; set; }
     public bool RequirePaymentBeforeCheckOut { get; set; }
+    public bool EarlyCheckOutRequiresAdmin { get; set; }
 }
 
 public sealed class JobsOptions

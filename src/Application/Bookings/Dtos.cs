@@ -47,7 +47,17 @@ public record RoomAssignmentRequest(List<RoomAssignmentLineRequest> Assignments)
 
 public record CheckInRequest();
 
-public record CheckOutRequest();
+public enum EarlyCheckOutReason
+{
+    GuestRequest,
+    Emergency,
+    RoomIssue,
+    Other
+}
+
+public record EarlyCheckOutInfo(EarlyCheckOutReason Reason, string? Notes, bool GuestConsented);
+
+public record CheckOutRequest(EarlyCheckOutInfo? EarlyCheckOut);
 
 public record BookingRoomTypeLineResponse(
     Guid Id,
@@ -58,7 +68,14 @@ public record BookingRoomTypeLineResponse(
     int NumberOfNights,
     decimal Subtotal);
 
-public record RoomAssignmentResponse(Guid RoomId, string RoomNumber, DateTime AssignedAt, DateTime? ReleasedAt);
+public record RoomAssignmentResponse(
+    Guid Id,
+    Guid RoomId,
+    string RoomNumber,
+    Guid BookingRoomTypeId,
+    Guid RoomTypeId,
+    DateTime AssignedAt,
+    DateTime? ReleasedAt);
 
 public record PaymentSummary(decimal TotalPaid, decimal Balance);
 
@@ -110,7 +127,18 @@ public record CheckOutResponse(
     string BookingReference,
     string Status,
     DateTime CheckedOutAt,
-    List<string> ReleasedRoomNumbers);
+    List<string> ReleasedRoomNumbers,
+    bool IsEarly,
+    DateTime ScheduledCheckOutAt,
+    DateTime ActualCheckOutAt);
+
+public record ChangeRoomTypeRequest(Guid BookingRoomTypeId, Guid NewRoomTypeId, int Quantity);
+
+public record ChangeRoomTypeResponse(BookingDetailResponse Booking, List<string> AssignmentsCleared);
+
+public record ReassignRoomRequest(Guid RoomAssignmentId, Guid NewRoomId, string? Reason);
+
+public record UnassignRoomRequest(Guid RoomAssignmentId);
 
 public record CreateBookingResponse(
     BookingDetailResponse Booking,

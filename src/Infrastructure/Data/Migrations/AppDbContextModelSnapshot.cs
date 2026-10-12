@@ -60,6 +60,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("ActualCheckOutAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Adults")
                         .HasColumnType("integer");
 
@@ -92,6 +95,12 @@ namespace Deutchezz.Infrastructure.Data.Migrations
 
                     b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("EarlyCheckOutNotes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("EarlyCheckOutReason")
+                        .HasColumnType("text");
 
                     b.Property<Guid>("GuestId")
                         .HasColumnType("uuid");

@@ -777,7 +777,7 @@ public class BookingService(
     }
 
     /// <summary>A DB-backed boolean gate with an appsettings fallback (7f).</summary>
-    private async Task<bool> PaymentGateAsync(string key, bool fallback, CancellationToken cancellationToken)
+    private async Task<bool> BoolSettingAsync(string key, bool fallback, CancellationToken cancellationToken)
     {
         var stored = await db.Settings.FirstOrDefaultAsync(s => s.Key == key, cancellationToken);
         return stored is not null && bool.TryParse(stored.Value, out var parsed) ? parsed : fallback;
@@ -994,7 +994,7 @@ public class BookingService(
             return Error.Conflict("booking.not_yet_arrivable", "Booking check-in date has not been reached");
 
         // 7f: optional gate requiring full payment before check-in (off by default).
-        if (await PaymentGateAsync("RequireFullPaymentAtCheckIn", settings.RequireFullPaymentAtCheckIn, cancellationToken))
+        if (await BoolSettingAsync("RequireFullPaymentAtCheckIn", settings.RequireFullPaymentAtCheckIn, cancellationToken))
         {
             var paid = await PaidAmountAsync(booking.Id, cancellationToken);
             if (paid < booking.TotalAmount)
@@ -1071,7 +1071,8 @@ public class BookingService(
             rooms.Select(r => r.RoomNumber).ToList());
     }
 
-    public async Task<Result<CheckOutResponse>> CheckOutAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken)
+    public async Task<Result<CheckOutResponse>> CheckOutAsync(
+        Guid id, CheckOutRequest? request, Guid staffUserId, bool actorIsAdministrator, CancellationToken cancellationToken)
     {
         var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
         if (booking is null)
@@ -1081,12 +1082,37 @@ public class BookingService(
             return Error.Conflict("booking.invalid_state", $"Only checked-in bookings can be checked out (current: {booking.Status})");
 
         // 7f: optional gate blocking check-out while a balance is outstanding (off by default).
-        if (await PaymentGateAsync("RequirePaymentBeforeCheckOut", settings.RequirePaymentBeforeCheckOut, cancellationToken))
+        // The balance gate is evaluated before the early check-out rule.
+        if (await BoolSettingAsync("RequirePaymentBeforeCheckOut", settings.RequirePaymentBeforeCheckOut, cancellationToken))
         {
             var paid = await PaidAmountAsync(booking.Id, cancellationToken);
             if (paid < booking.TotalAmount)
                 return Error.Conflict("booking.balance_outstanding",
                     "The outstanding balance for this booking must be settled before check-out");
+        }
+
+        var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+        var scheduledUtc = await ScheduledCheckOutUtcAsync(booking, cancellationToken);
+        var isEarly = nowUtc < scheduledUtc;
+
+        string? earlyReason = null;
+        string? earlyNotes = null;
+        if (isEarly)
+        {
+            var early = request?.EarlyCheckOut;
+            if (early is null || !early.GuestConsented)
+                return Error.Conflict("booking.early_checkout_requires_consent",
+                    "An early check-out requires the guest's recorded consent and a reason");
+
+            if (early.Reason == EarlyCheckOutReason.Other && string.IsNullOrWhiteSpace(early.Notes))
+                return Error.Validation("booking.notes_required", "Notes are required when the reason for early check-out is 'Other'");
+
+            if (await BoolSettingAsync("EarlyCheckOutRequiresAdmin", settings.EarlyCheckOutRequiresAdmin, cancellationToken) && !actorIsAdministrator)
+                return Error.Forbidden("booking.early_checkout_requires_admin",
+                    "Early check-outs must be approved by an administrator");
+
+            earlyReason = early.Reason.ToString();
+            earlyNotes = string.IsNullOrWhiteSpace(early.Notes) ? null : early.Notes.Trim();
         }
 
         var assignments = await db.RoomAssignments
@@ -1108,6 +1134,9 @@ public class BookingService(
         }
 
         booking.Status = BookingStatus.CheckedOut;
+        booking.ActualCheckOutAt = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+        booking.EarlyCheckOutReason = earlyReason;
+        booking.EarlyCheckOutNotes = earlyNotes;
         booking.ConcurrencyToken = Guid.NewGuid().ToByteArray();
 
         // BR-036: only notify a guest who has an account.
@@ -1126,7 +1155,12 @@ public class BookingService(
 
         await db.SaveChangesAsync(cancellationToken);
 
-        await activityLogger.LogAsync(staffUserId, "booking.checked_out", "Booking", booking.Id, null, cancellationToken);
+        var description = earlyReason is null
+            ? null
+            : $"Early check-out of {booking.BookingReference} — reason {earlyReason}, guest consented: yes"
+              + (earlyNotes is null ? string.Empty : $" ({earlyNotes})")
+              + $" (scheduled {scheduledUtc:yyyy-MM-dd HH:mm} UTC)";
+        await activityLogger.LogAsync(staffUserId, "booking.checked_out", "Booking", booking.Id, description, cancellationToken);
 
         if (booking.Guest is not null && !string.IsNullOrWhiteSpace(booking.Guest.Email))
         {
@@ -1144,7 +1178,302 @@ public class BookingService(
             booking.BookingReference,
             booking.Status.ToString(),
             clock.UtcNow,
-            rooms.Select(r => r.RoomNumber).ToList());
+            rooms.Select(r => r.RoomNumber).ToList(),
+            isEarly,
+            scheduledUtc,
+            booking.ActualCheckOutAt.Value);
+    }
+
+    /// <summary>The leading edge of the check-out date (CheckOutDate at the configured check-out
+    /// time, DB <c>Setting CheckOutTime</c> — else <c>Settings:CheckOutTime</c>, default 12:00 —
+    /// in Africa/Lagos), expressed in UTC. Performing a check-out before this moment is early.</summary>
+    private async Task<DateTime> ScheduledCheckOutUtcAsync(Booking booking, CancellationToken cancellationToken)
+    {
+        var checkOutTime = await CheckOutTimeAsync(cancellationToken);
+        var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+        var lagosOffset = businessClock.ConvertFromUtc(new DateTimeOffset(nowUtc)).Offset;
+        return new DateTimeOffset(booking.CheckOutDate.ToDateTime(checkOutTime), lagosOffset).UtcDateTime;
+    }
+
+    /// <summary>The admin-editable check-out time (default 12:00) used to decide early check-out.</summary>
+    private async Task<TimeOnly> CheckOutTimeAsync(CancellationToken cancellationToken)
+    {
+        var stored = await db.Settings.FirstOrDefaultAsync(s => s.Key == "CheckOutTime", cancellationToken);
+        return stored is not null && TimeOnly.TryParse(stored.Value, out var parsed) ? parsed : settings.CheckOutTime;
+    }
+
+    public async Task<Result<ChangeRoomTypeResponse>> ChangeRoomTypeAsync(
+        Guid id, ChangeRoomTypeRequest request, Guid staffUserId, CancellationToken cancellationToken)
+    {
+        var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        if (booking is null)
+            return Error.NotFound("booking.not_found", "Booking not found");
+
+        if (booking.Status is not (BookingStatus.Pending or BookingStatus.Confirmed))
+            return Error.Conflict("booking.invalid_state",
+                $"Room types can only be changed before check-in (current: {booking.Status})");
+
+        if (request.Quantity < 1)
+            return Error.Validation("booking.invalid_quantity", "Quantity must be at least 1");
+
+        var lines = await db.BookingRoomTypes.Where(brt => brt.BookingId == id).ToListAsync(cancellationToken);
+        var oldLine = lines.FirstOrDefault(l => l.Id == request.BookingRoomTypeId);
+        if (oldLine is null)
+            return Error.Validation("booking.line_invalid", "The room type line does not belong to this booking");
+
+        if (request.Quantity > oldLine.Quantity)
+            return Error.Validation("booking.invalid_quantity", "Cannot change more rooms than the line holds");
+
+        if (request.NewRoomTypeId == oldLine.RoomTypeId)
+            return Error.Validation("booking.roomtype_invalid", "Choose a different room type for the change");
+
+        var involvedRoomTypeIds = new[] { oldLine.RoomTypeId, request.NewRoomTypeId }.Distinct().OrderBy(x => x).ToList();
+
+        var nights = booking.Nights;
+        var paidBefore = await PaidAmountAsync(id, cancellationToken);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Serialize concurrent changes: lock the involved RoomType rows by ascending Id so two
+        // bookings changing each other's type cannot deadlock a Postgres row lock.
+        await db.Database.ExecuteSqlRawAsync(
+            "SELECT 1 FROM \"RoomTypes\" WHERE \"Id\" = ANY({0}) ORDER BY \"Id\" FOR UPDATE",
+            new object[] { involvedRoomTypeIds }, cancellationToken);
+
+        var involvedTypes = await db.RoomTypes.Where(rt => involvedRoomTypeIds.Contains(rt.Id)).ToListAsync(cancellationToken);
+        var newType = involvedTypes.FirstOrDefault(rt => rt.Id == request.NewRoomTypeId);
+        if (newType is null || !newType.IsActive)
+            return Error.Validation("booking.roomtype_invalid", "The new room type is invalid or inactive");
+
+        // Availability for the new type over the stay, EXCLUDING this booking's own quantities:
+        // capacity - held by other overlapping bookings - this booking's own rooms already on that type.
+        var capacity = await db.Rooms.CountAsync(
+            r => r.RoomTypeId == newType.Id && r.IsActive && r.Status != RoomStatus.Maintenance && r.Status != RoomStatus.Inactive,
+            cancellationToken);
+        var heldByOthers = await db.BookingRoomTypes
+            .Where(brt => brt.RoomTypeId == newType.Id && brt.BookingId != id)
+            .Join(db.Bookings.Where(b =>
+                    (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
+                    && b.CheckInDate < booking.CheckOutDate
+                    && b.CheckOutDate > booking.CheckInDate),
+                brt => brt.BookingId, b => b.Id, (brt, b) => brt.Quantity)
+            .SumAsync(q => (int?)q, cancellationToken) ?? 0;
+        var ownOnNewType = lines.Where(l => l.RoomTypeId == newType.Id).Sum(l => l.Quantity);
+        var free = capacity - heldByOthers - ownOnNewType;
+        if (free < request.Quantity)
+            return Error.Conflict("booking.unavailable",
+                $"Only {Math.Max(0, free)} room(s) of '{newType.Name}' are available for these dates");
+
+        // Project the new total BEFORE mutating so the paid-exceeds-new-total check can run.
+        var baseRate = newType.BasePrice;
+        var lineSubtotal = baseRate * nights * request.Quantity;
+        var projectedTotal = lines.Where(l => l.Id != oldLine.Id).Sum(l => l.Subtotal);
+        if (oldLine.Quantity - request.Quantity > 0)
+            projectedTotal += oldLine.RatePerNight * nights * (oldLine.Quantity - request.Quantity);
+        projectedTotal += lineSubtotal;
+
+        if (paidBefore > projectedTotal)
+            return Error.Conflict("booking.paid_exceeds_new_total",
+                $"Guests have already paid {paidBefore:N2}, which exceeds the new total of {projectedTotal:N2}");
+
+        // Merge into an existing line only when its rate equals the new type's current BasePrice.
+        var mergeTarget = lines.FirstOrDefault(l =>
+            l.Id != oldLine.Id && l.RoomTypeId == newType.Id && l.RatePerNight == baseRate);
+
+        if (mergeTarget is not null)
+        {
+            mergeTarget.Quantity += request.Quantity;
+            mergeTarget.Subtotal = mergeTarget.RatePerNight * nights * mergeTarget.Quantity;
+        }
+        else
+        {
+            db.BookingRoomTypes.Add(new BookingRoomType
+            {
+                BookingId = id,
+                RoomTypeId = newType.Id,
+                Quantity = request.Quantity,
+                RatePerNight = baseRate,
+                NumberOfNights = nights,
+                Subtotal = lineSubtotal
+            });
+        }
+
+        oldLine.Quantity -= request.Quantity;
+        if (oldLine.Quantity == 0)
+        {
+            db.BookingRoomTypes.Remove(oldLine);
+        }
+        else
+        {
+            oldLine.Subtotal = oldLine.RatePerNight * nights * oldLine.Quantity;
+        }
+
+        // Release up to the moved quantity of live assignments belonging to the old line.
+        var clearedAssignments = await db.RoomAssignments
+            .Where(ra => ra.BookingId == id && ra.BookingRoomTypeId == oldLine.Id && ra.ReleasedAt == null)
+            .OrderBy(ra => ra.AssignedAt)
+            .Take(request.Quantity)
+            .ToListAsync(cancellationToken);
+
+        var clearedRoomIds = clearedAssignments.Select(a => a.RoomId).ToList();
+        foreach (var assignment in clearedAssignments)
+        {
+            assignment.ReleasedAt = clock.UtcNow;
+        }
+
+        var clearedNumbers = await db.Rooms
+            .Where(r => clearedRoomIds.Contains(r.Id))
+            .Select(r => r.RoomNumber)
+            .ToListAsync(cancellationToken);
+
+        booking.TotalAmount = projectedTotal;
+        booking.PaymentStatus = paidBefore <= 0
+            ? PaymentStatus.Pending
+            : paidBefore >= projectedTotal ? PaymentStatus.Paid : PaymentStatus.PartiallyPaid;
+        booking.ConcurrencyToken = Guid.NewGuid().ToByteArray();
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        await activityLogger.LogAsync(staffUserId, "booking.room_type_changed", "Booking", booking.Id,
+            $"Changed room type line {oldLine.Id}: {request.Quantity} x '{newType.Name}' for {booking.BookingReference}",
+            cancellationToken);
+
+        if (booking.Guest is not null && !string.IsNullOrWhiteSpace(booking.Guest.Email))
+        {
+            try
+            {
+                var updatedLines = await db.BookingRoomTypes.Where(brt => brt.BookingId == id).ToListAsync(cancellationToken);
+                var updatedTypeIds = updatedLines.Select(l => l.RoomTypeId).ToList();
+                var updatedTypeNames = await db.RoomTypes.Where(rt => updatedTypeIds.Contains(rt.Id)).ToDictionaryAsync(rt => rt.Id, rt => rt.Name, cancellationToken);
+                var roomsForEmail = updatedLines.Select(l => new BookingConfirmationRoom(
+                    updatedTypeNames.GetValueOrDefault(l.RoomTypeId, ""), l.Quantity, l.RatePerNight, l.Subtotal)).ToList();
+
+                var (subject, html, text) = BookingUpdatedEmail.Build(new BookingUpdatedModel(
+                    booking.BookingReference,
+                    $"{booking.Guest.FirstName} {booking.Guest.LastName}".Trim(),
+                    booking.CheckInDate,
+                    booking.CheckOutDate,
+                    booking.Nights,
+                    roomsForEmail,
+                    booking.TotalAmount));
+                _ = emailSender.SendAsync(booking.Guest.Email, subject, html, text, CancellationToken.None);
+            }
+            catch
+            {
+                // A notification (email) failure must never fail the room type change.
+            }
+        }
+
+        return new ChangeRoomTypeResponse(await MapAsync(id, cancellationToken), clearedNumbers);
+    }
+
+    public async Task<Result<BookingDetailResponse>> ReassignRoomAsync(
+        Guid id, ReassignRoomRequest request, Guid staffUserId, CancellationToken cancellationToken)
+    {
+        var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        if (booking is null)
+            return Error.NotFound("booking.not_found", "Booking not found");
+
+        if (booking.Status is not (BookingStatus.Confirmed or BookingStatus.CheckedIn))
+            return Error.Conflict("booking.invalid_state",
+                $"Rooms can only be reassigned before the guest departs (current: {booking.Status})");
+
+        var assignment = await db.RoomAssignments
+            .FirstOrDefaultAsync(ra => ra.Id == request.RoomAssignmentId && ra.BookingId == id && ra.ReleasedAt == null, cancellationToken);
+        if (assignment is null)
+            return Error.NotFound("booking.assignment_not_found",
+                "The room assignment does not belong to this booking or has already been released");
+
+        var line = await db.BookingRoomTypes.FirstOrDefaultAsync(l => l.Id == assignment.BookingRoomTypeId, cancellationToken);
+        if (line is null)
+            return Error.Validation("booking.line_invalid", "The assignment's room type line no longer exists");
+
+        var newRoom = await db.Rooms.FirstOrDefaultAsync(r => r.Id == request.NewRoomId, cancellationToken);
+        if (newRoom is null)
+            return Error.Validation("booking.roomtype_invalid", "The selected room does not exist");
+
+        if (newRoom.RoomTypeId != line.RoomTypeId)
+            return Error.Validation("booking.wrong_roomtype",
+                $"Room {newRoom.RoomNumber} does not belong to the booked room type");
+
+        if (!newRoom.IsActive || newRoom.Status is RoomStatus.Maintenance or RoomStatus.Inactive)
+            return Error.Conflict("booking.room_unavailable", $"Room {newRoom.RoomNumber} is not available");
+
+        if (request.NewRoomId == assignment.RoomId)
+            return Error.Validation("booking.roomtype_invalid", $"Room {newRoom.RoomNumber} is already assigned to this booking");
+
+        var alreadyAssigned = await db.RoomAssignments.AnyAsync(
+            ra => ra.BookingId == id && ra.ReleasedAt == null && ra.RoomId == request.NewRoomId, cancellationToken);
+        if (alreadyAssigned)
+            return Error.Conflict("booking.room_unavailable", $"Room {newRoom.RoomNumber} is already assigned to this booking");
+
+        // BR-023: the target room must be free for the whole stay.
+        var conflicting = await db.RoomAssignments
+            .Where(ra => ra.RoomId == request.NewRoomId && ra.ReleasedAt == null && ra.Id != assignment.Id)
+            .Join(db.Bookings.Where(b =>
+                    b.Id != id
+                    && (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
+                    && b.CheckInDate < booking.CheckOutDate
+                    && b.CheckOutDate > booking.CheckInDate),
+                ra => ra.BookingId, b => b.Id, (ra, b) => ra.Id)
+            .AnyAsync(cancellationToken);
+        if (conflicting)
+            return Error.Conflict("booking.room_unavailable", $"Room {newRoom.RoomNumber} is already booked for these dates");
+
+        var oldRoom = await db.Rooms.FirstOrDefaultAsync(r => r.Id == assignment.RoomId, cancellationToken);
+
+        assignment.ReleasedAt = clock.UtcNow;
+        db.RoomAssignments.Add(new RoomAssignment
+        {
+            BookingId = id,
+            BookingRoomTypeId = line.Id,
+            RoomId = newRoom.Id,
+            AssignedAt = clock.UtcNow,
+            AssignedByUserId = staffUserId
+        });
+
+        if (booking.Status == BookingStatus.CheckedIn)
+        {
+            if (oldRoom is not null)
+                oldRoom.Status = RoomStatus.Available;
+            newRoom.Status = RoomStatus.Occupied;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        await activityLogger.LogAsync(staffUserId, "booking.room_reassigned", "Booking", booking.Id,
+            $"Reassigned room {oldRoom?.RoomNumber} to {newRoom.RoomNumber}"
+            + (string.IsNullOrWhiteSpace(request.Reason) ? string.Empty : $" ({request.Reason.Trim()})"),
+            cancellationToken);
+
+        return await MapAsync(booking.Id, cancellationToken);
+    }
+
+    public async Task<Result<BookingDetailResponse>> UnassignRoomAsync(
+        Guid id, UnassignRoomRequest request, Guid staffUserId, CancellationToken cancellationToken)
+    {
+        var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        if (booking is null)
+            return Error.NotFound("booking.not_found", "Booking not found");
+
+        if (booking.Status is not (BookingStatus.Pending or BookingStatus.Confirmed))
+            return Error.Conflict("booking.invalid_state",
+                $"Rooms can only be unassigned before check-in (current: {booking.Status})");
+
+        var assignment = await db.RoomAssignments
+            .FirstOrDefaultAsync(ra => ra.Id == request.RoomAssignmentId && ra.BookingId == id && ra.ReleasedAt == null, cancellationToken);
+        if (assignment is null)
+            return Error.NotFound("booking.assignment_not_found",
+                "The room assignment does not belong to this booking or has already been released");
+
+        assignment.ReleasedAt = clock.UtcNow;
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        await activityLogger.LogAsync(staffUserId, "booking.room_unassigned", "Booking", booking.Id, null, cancellationToken);
+
+        return await MapAsync(booking.Id, cancellationToken);
     }
 
     private async Task<BookingDetailResponse> MapAsync(Guid id, CancellationToken cancellationToken)
@@ -1157,6 +1486,7 @@ public class BookingService(
         var roomTypeIds = lines.Select(l => l.RoomTypeId).ToList();
         var roomTypes = await db.RoomTypes.Where(rt => roomTypeIds.Contains(rt.Id)).ToListAsync(cancellationToken);
         var roomTypeNameById = roomTypes.ToDictionary(rt => rt.Id, rt => rt.Name);
+        var lineRoomTypeById = lines.ToDictionary(l => l.Id, l => l.RoomTypeId);
 
         var assignments = await db.RoomAssignments.Where(a => a.BookingId == id && a.ReleasedAt == null).ToListAsync(cancellationToken);
         var assignedRoomIds = assignments.Select(a => a.RoomId).ToList();
@@ -1204,8 +1534,11 @@ public class BookingService(
                 l.NumberOfNights,
                 l.Subtotal)).ToList(),
             assignments.Select(a => new RoomAssignmentResponse(
+                a.Id,
                 a.RoomId,
                 roomById.GetValueOrDefault(a.RoomId, ""),
+                a.BookingRoomTypeId,
+                lineRoomTypeById.GetValueOrDefault(a.BookingRoomTypeId, Guid.Empty),
                 a.AssignedAt,
                 a.ReleasedAt)).ToList(),
             new PaymentSummary(paid, Math.Max(0, booking.TotalAmount - paid)),

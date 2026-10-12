@@ -12,4 +12,5 @@ public interface ISettingsProvider
     int CancellationWindowHours { get; }
     bool RequireFullPaymentAtCheckIn { get; }
     bool RequirePaymentBeforeCheckOut { get; }
+    bool EarlyCheckOutRequiresAdmin { get; }
 }

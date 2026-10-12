@@ -251,8 +251,10 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
             new { reason = "GuestRequest", notes = (string?)null, refundPaidAmounts = false });
         await AssertProblemAsync(cancelCheckedIn, (int)HttpStatusCode.Conflict, "booking.not_cancellable");
 
-        // Checked-out.
-        (await staff.PostAsync($"/api/v1/reception/bookings/{bookingId}/check-out", content: null)).EnsureSuccessStatusCode();
+        // Checked-out (the stay ends in the future, so consent is required).
+        (await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{bookingId}/check-out",
+            new { earlyCheckOut = new { reason = "GuestRequest", notes = (string?)null, guestConsented = true } }))
+            .EnsureSuccessStatusCode();
         var cancelCheckedOut = await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{bookingId}/cancel",
             new { reason = "GuestRequest", notes = (string?)null, refundPaidAmounts = false });
         await AssertProblemAsync(cancelCheckedOut, (int)HttpStatusCode.Conflict, "booking.not_cancellable");

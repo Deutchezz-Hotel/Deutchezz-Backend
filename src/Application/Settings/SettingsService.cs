@@ -14,7 +14,8 @@ public record AdminSettingsResponse(
     string CheckOutTime,
     int CancellationWindowHours,
     bool RequireFullPaymentAtCheckIn,
-    bool RequirePaymentBeforeCheckOut);
+    bool RequirePaymentBeforeCheckOut,
+    bool EarlyCheckOutRequiresAdmin);
 
 public record UpdateAdminSettingsRequest(
     int? MaxRoomsPerBooking,
@@ -22,7 +23,8 @@ public record UpdateAdminSettingsRequest(
     string? CheckOutTime,
     int? CancellationWindowHours,
     bool? RequireFullPaymentAtCheckIn,
-    bool? RequirePaymentBeforeCheckOut);
+    bool? RequirePaymentBeforeCheckOut,
+    bool? EarlyCheckOutRequiresAdmin);
 
 public interface IAdminSettingsService
 {
@@ -42,6 +44,7 @@ public class AdminSettingsService(
     private const string CancellationWindowKey = "CancellationWindowHours";
     private const string RequireFullPaymentAtCheckInKey = "RequireFullPaymentAtCheckIn";
     private const string RequirePaymentBeforeCheckOutKey = "RequirePaymentBeforeCheckOut";
+    private const string EarlyCheckOutRequiresAdminKey = "EarlyCheckOutRequiresAdmin";
 
     public async Task<Result<AdminSettingsResponse>> GetAsync(CancellationToken cancellationToken)
     {
@@ -53,7 +56,8 @@ public class AdminSettingsService(
             GetTime(stored, CheckOutTimeKey, settings.Value.CheckOutTime),
             GetInt(stored, CancellationWindowKey, cancellation.Value.WindowHours),
             GetBool(stored, RequireFullPaymentAtCheckInKey, settings.Value.RequireFullPaymentAtCheckIn),
-            GetBool(stored, RequirePaymentBeforeCheckOutKey, settings.Value.RequirePaymentBeforeCheckOut));
+            GetBool(stored, RequirePaymentBeforeCheckOutKey, settings.Value.RequirePaymentBeforeCheckOut),
+            GetBool(stored, EarlyCheckOutRequiresAdminKey, settings.Value.EarlyCheckOutRequiresAdmin));
     }
 
     public async Task<Result<AdminSettingsResponse>> UpdateAsync(
@@ -68,7 +72,7 @@ public class AdminSettingsService(
         if (request.CancellationWindowHours is < 1 or > 8760)
             return Error.Validation("settings.invalid_cancellation_window", "CancellationWindowHours must be between 1 and 8760");
 
-        var edits = new List<(string Key, string Value)>(6);
+        var edits = new List<(string Key, string Value)>(7);
 
         if (request.MaxRoomsPerBooking is not null)
             edits.Add((MaxRoomsKey, request.MaxRoomsPerBooking.Value.ToString()));
@@ -82,6 +86,8 @@ public class AdminSettingsService(
             edits.Add((RequireFullPaymentAtCheckInKey, request.RequireFullPaymentAtCheckIn.Value.ToString()));
         if (request.RequirePaymentBeforeCheckOut is not null)
             edits.Add((RequirePaymentBeforeCheckOutKey, request.RequirePaymentBeforeCheckOut.Value.ToString()));
+        if (request.EarlyCheckOutRequiresAdmin is not null)
+            edits.Add((EarlyCheckOutRequiresAdminKey, request.EarlyCheckOutRequiresAdmin.Value.ToString()));
 
         foreach (var (key, value) in edits)
         {

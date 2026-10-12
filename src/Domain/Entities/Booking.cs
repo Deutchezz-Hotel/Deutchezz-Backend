@@ -20,6 +20,9 @@ public class Booking : AuditableEntity
     public decimal TotalAmount { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
+    public DateTime? ActualCheckOutAt { get; set; }
+    public string? EarlyCheckOutReason { get; set; }
+    public string? EarlyCheckOutNotes { get; set; }
     public Guid? CreatedByUserId { get; set; }
     public string? IdempotencyKey { get; set; }
     public string? IdempotencyRequestHash { get; set; }

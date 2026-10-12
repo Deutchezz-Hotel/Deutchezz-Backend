@@ -20,6 +20,9 @@ public class RoomQuery : QueryParameters
     public Guid? RoomTypeId { get; set; }
     /// <summary>When set, status is computed for this stay date (date-based occupancy board).</summary>
     public DateOnly? Date { get; set; }
+    /// <summary>When both set, only rooms free for the whole half-open [availableFrom, availableTo) stay are returned.</summary>
+    public DateOnly? AvailableFrom { get; set; }
+    public DateOnly? AvailableTo { get; set; }
     /// <summary>Free-text filter matched against room number and room type name.</summary>
     public string? Search { get; set; }
 }

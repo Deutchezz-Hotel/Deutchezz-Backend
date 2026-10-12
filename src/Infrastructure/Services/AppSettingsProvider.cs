@@ -22,6 +22,8 @@ public class AppSettingsProvider(
 
     public bool RequirePaymentBeforeCheckOut => _settings.RequirePaymentBeforeCheckOut;
 
+    public bool EarlyCheckOutRequiresAdmin => _settings.EarlyCheckOutRequiresAdmin;
+
     private static TimeOnly Parse(string value, string fallback) =>
         TimeOnly.TryParse(value, out var time) ? time : TimeOnly.Parse(fallback);
 }
