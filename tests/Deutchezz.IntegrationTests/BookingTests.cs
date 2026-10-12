@@ -242,7 +242,7 @@ public class BookingTests(HotelWebApplicationFactory factory) : IntegrationTestB
                 firstName = "Ada",
                 lastName = "Obi",
                 email = guestEmail ?? $"guest-{Guid.NewGuid():N}@example.com",
-                phoneNumber = "08010000000"
+                phoneNumber = UniquePhone()
             },
             rooms = new[] { new { roomTypeId, quantity = 1 } },
             specialRequests = (string?)null

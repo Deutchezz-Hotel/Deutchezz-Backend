@@ -284,6 +284,28 @@ public class BookingService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
+        // SoT v1.10, 7m / BR-041: warn on a likely duplicate public booking before reserving stock.
+        var duplicate = await FindDuplicateWarningAsync(request, userId, cancellationToken);
+        if (duplicate is not null && !request.AcknowledgeDuplicate)
+        {
+            var minutesAgo = (int)Math.Max(0, Math.Floor((clock.UtcNow - duplicate.CreatedAt).TotalMinutes));
+            var extensions = new Dictionary<string, object?>
+            {
+                ["minutesAgo"] = minutesAgo,
+                ["reference"] = userId is not null
+                    ? duplicate.BookingReference
+                    : MaskReference(duplicate.BookingReference)
+            };
+            if (userId is not null)
+                extensions["bookingId"] = duplicate.Id;
+
+            return Error.Conflict(
+                "booking.possible_duplicate",
+                "A booking for this guest was created a short time ago. Review the existing booking, "
+                + "then resubmit with acknowledgeDuplicate set to true to continue.")
+                .WithExtensions(extensions);
+        }
+
         var availability = await ReserveAvailabilityAsync(
             roomTypeIds, request.Rooms, request.CheckInDate, request.CheckOutDate, cancellationToken);
         if (availability.IsFailure)
@@ -522,6 +544,71 @@ public class BookingService(
     }
 
     private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+    /// <summary>SoT v1.10, 7m / BR-041. Returns the most recent not-yet-checked-in booking by the
+    /// same guest within the configured window, or null. Matching is by owning account for an
+    /// authenticated caller, otherwise by the anonymous guest's normalized email or phone.</summary>
+    private async Task<Booking?> FindDuplicateWarningAsync(
+        CreateBookingRequest request, Guid? userId, CancellationToken cancellationToken)
+    {
+        var windowMinutes = settings.DuplicateWarningMinutes;
+        if (windowMinutes <= 0)
+            return null;
+
+        var cutoff = clock.UtcNow.AddMinutes(-windowMinutes);
+
+        var candidates = await db.Bookings
+            .AsNoTracking()
+            .Include(b => b.Guest)
+            .Where(b => (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed)
+                        && b.CreatedAt >= cutoff)
+            .OrderByDescending(b => b.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        if (userId is not null)
+            return candidates.FirstOrDefault(b => b.Guest is not null && b.Guest.UserId == userId);
+
+        var normalizedEmail = NormalizeEmail(request.Guest.Email);
+        var rawPhone = string.IsNullOrWhiteSpace(request.Guest.PhoneNumber)
+            ? null
+            : request.Guest.PhoneNumber.Trim();
+        var normalizedPhone = PhoneNumber.TryNormalize(rawPhone, out var np) ? np : null;
+
+        return candidates.FirstOrDefault(b =>
+        {
+            var guest = b.Guest;
+            if (guest is null || guest.UserId is not null)
+                return false;
+
+            var emailMatch = guest.Email is not null && NormalizeEmail(guest.Email) == normalizedEmail;
+
+            var phoneMatch = false;
+            if (rawPhone is not null && guest.PhoneNumber is not null)
+            {
+                var guestRaw = guest.PhoneNumber.Trim();
+                var guestNormalized = PhoneNumber.TryNormalize(guest.PhoneNumber, out var gn) ? gn : null;
+                phoneMatch = guestRaw == rawPhone
+                    || (normalizedPhone is not null && guestNormalized == normalizedPhone);
+            }
+
+            return emailMatch || phoneMatch;
+        });
+    }
+
+    /// <summary>SoT v1.10, 7m. Masks a booking reference for an anonymous caller, keeping only the
+    /// <c>DHI-&lt;year&gt;-</c> prefix and the last two suffix characters (e.g. <c>DHI-2026-****34</c>).</summary>
+    private static string MaskReference(string reference)
+    {
+        var lastDash = reference.LastIndexOf('-');
+        if (lastDash < 0 || lastDash == reference.Length - 1)
+            return new string('*', reference.Length);
+
+        var prefix = reference[..(lastDash + 1)];
+        var suffix = reference[(lastDash + 1)..];
+        return suffix.Length <= 2
+            ? prefix + new string('*', suffix.Length)
+            : prefix + new string('*', suffix.Length - 2) + suffix[^2..];
+    }
 
     private async Task<string?> GetUserEmailAsync(Guid userId, CancellationToken cancellationToken) =>
         await db.Users.Where(u => u.Id == userId).Select(u => u.Email).FirstOrDefaultAsync(cancellationToken)
@@ -827,6 +914,24 @@ public class BookingService(
         if (!string.IsNullOrWhiteSpace(query.Reference))
             q = q.Where(b => b.BookingReference.Contains(query.Reference));
 
+        // 7l: free-text search over guest full name or booking reference.
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.ToLowerInvariant();
+            q = q.Where(b => b.BookingReference.ToLower().Contains(term)
+                || (b.Guest != null && (b.Guest.FirstName.ToLower().Contains(term)
+                    || b.Guest.LastName.ToLower().Contains(term)
+                    || (b.Guest.FirstName + " " + b.Guest.LastName).ToLower().Contains(term))));
+        }
+
+        // 7l: only bookings with a positive outstanding balance, never cancelled.
+        if (query.HasBalanceDue)
+        {
+            q = q.Where(b => b.Status != BookingStatus.Cancelled &&
+                b.TotalAmount - (db.Payments.Where(p => p.BookingId == b.Id && p.Status == PaymentStatus.Paid)
+                    .Sum(p => (decimal?)p.Amount) ?? 0m) > 0m);
+        }
+
         if (query.From is not null)
             q = q.Where(b => b.CheckOutDate >= query.From);
 
@@ -835,19 +940,10 @@ public class BookingService(
 
         var totalCount = await q.CountAsync(cancellationToken);
 
-        var items = await q
-            .ApplySort(query, Sortable, qq => qq.OrderByDescending(b => b.CreatedAt))
-            .Skip((query.Page - 1) * query.PageSize)
-            .Take(query.PageSize)
-            .Select(b => new BookingListItemResponse(
-                b.Id, b.BookingReference,
-                b.Guest != null ? (b.Guest.FirstName + " " + b.Guest.LastName).Trim() : "",
-                b.Guest != null ? b.Guest.Email : null,
-                b.Guest != null ? b.Guest.PhoneNumber : null,
-                b.CheckInDate, b.CheckOutDate, b.Status.ToString(), b.PaymentStatus.ToString(), b.Source.ToString(),
-                b.CreatedByUserId == null ? null : db.Users.Where(u => u.Id == b.CreatedByUserId)
-                    .Select(u => ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim()).FirstOrDefault(),
-                b.TotalAmount))
+        var items = await ProjectList(q
+                .ApplySort(query, Sortable, qq => qq.OrderByDescending(b => b.CreatedAt))
+                .Skip((query.Page - 1) * query.PageSize)
+                .Take(query.PageSize))
             .ToListAsync(cancellationToken);
 
         return new PaginatedResult<BookingListItemResponse>(items, totalCount, query.Page, query.PageSize);
@@ -870,23 +966,31 @@ public class BookingService(
 
         var totalCount = await q.CountAsync(cancellationToken);
 
-        var items = await q
-            .ApplySort(query, Sortable, qq => qq.OrderByDescending(b => b.CreatedAt))
-            .Skip((query.Page - 1) * query.PageSize)
-            .Take(query.PageSize)
-            .Select(b => new BookingListItemResponse(
-                b.Id, b.BookingReference,
-                b.Guest != null ? (b.Guest.FirstName + " " + b.Guest.LastName).Trim() : "",
-                b.Guest != null ? b.Guest.Email : null,
-                b.Guest != null ? b.Guest.PhoneNumber : null,
-                b.CheckInDate, b.CheckOutDate, b.Status.ToString(), b.PaymentStatus.ToString(), b.Source.ToString(),
-                b.CreatedByUserId == null ? null : db.Users.Where(u => u.Id == b.CreatedByUserId)
-                    .Select(u => ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim()).FirstOrDefault(),
-                b.TotalAmount))
+        var items = await ProjectList(q
+                .ApplySort(query, Sortable, qq => qq.OrderByDescending(b => b.CreatedAt))
+                .Skip((query.Page - 1) * query.PageSize)
+                .Take(query.PageSize))
             .ToListAsync(cancellationToken);
 
         return new PaginatedResult<BookingListItemResponse>(items, totalCount, query.Page, query.PageSize);
     }
+
+    /// <summary>
+    /// Shared list projection used by every booking list. It also computes <c>balanceDue</c> (7l)
+    /// as "TotalAmount − Σ Paid payments" in SQL so the client never derives the balance.
+    /// </summary>
+    private IQueryable<BookingListItemResponse> ProjectList(IQueryable<Booking> q) =>
+        q.Select(b => new BookingListItemResponse(
+            b.Id, b.BookingReference,
+            b.Guest != null ? (b.Guest.FirstName + " " + b.Guest.LastName).Trim() : "",
+            b.Guest != null ? b.Guest.Email : null,
+            b.Guest != null ? b.Guest.PhoneNumber : null,
+            b.CheckInDate, b.CheckOutDate, b.Status.ToString(), b.PaymentStatus.ToString(), b.Source.ToString(),
+            b.CreatedByUserId == null ? null : db.Users.Where(u => u.Id == b.CreatedByUserId)
+                .Select(u => ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim()).FirstOrDefault(),
+            b.TotalAmount,
+            b.TotalAmount - (db.Payments.Where(p => p.BookingId == b.Id && p.Status == PaymentStatus.Paid)
+                .Sum(p => (decimal?)p.Amount) ?? 0m)));
 
     public async Task<Result<BookingDetailResponse>> GetDetailAsync(Guid id, CancellationToken cancellationToken)
     {

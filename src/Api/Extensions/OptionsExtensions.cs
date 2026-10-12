@@ -41,6 +41,12 @@ public static class OptionsExtensions
             .Validate(o => o.WindowHours > 0, "Cancellation:WindowHours must be greater than 0.")
             .ValidateOnStart();
 
+        services.AddOptions<BookingOptions>()
+            .Bind(configuration.GetSection(BookingOptions.SectionName))
+            .Validate(o => o.DuplicateWarningMinutes >= 0,
+                "Booking:DuplicateWarningMinutes must not be negative.")
+            .ValidateOnStart();
+
         services.AddOptions<SettingsOptions>()
             .Bind(configuration.GetSection(SettingsOptions.SectionName))
             .Validate(o => o.MaxRoomsPerBooking >= 1 && o.MaxRoomsPerBooking <= 1000,
@@ -130,6 +136,7 @@ public static class OptionsExtensions
         _ = services.GetRequiredService<IOptions<JwtOptions>>().Value;
         _ = services.GetRequiredService<IOptions<SeedOptions>>().Value;
         _ = services.GetRequiredService<IOptions<CancellationOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<BookingOptions>>().Value;
         _ = services.GetRequiredService<IOptions<SettingsOptions>>().Value;
         _ = services.GetRequiredService<IOptions<CorsOptions>>().Value;
         _ = services.GetRequiredService<IOptions<RateLimitingOptions>>().Value;

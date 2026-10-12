@@ -74,7 +74,7 @@ public class ReceptionFlowTests(HotelWebApplicationFactory factory) : Integratio
                     firstName = "Reception",
                     lastName = "Flow",
                     email = $"reception-{Guid.NewGuid():N}@example.com",
-                    phoneNumber = "08010000000"
+                    phoneNumber = UniquePhone()
                 },
                 rooms = new[] { new { roomTypeId, quantity = 1 } },
                 specialRequests = (string?)null

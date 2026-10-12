@@ -36,6 +36,15 @@ public sealed class CancellationOptions
     public int WindowHours { get; set; } = 24;
 }
 
+public sealed class BookingOptions
+{
+    public const string SectionName = "Booking";
+
+    /// <summary>Minutes after a booking is created during which a second booking for the same
+    /// guest triggers the duplicate-booking warning (v1.10, 7m, BR-041).</summary>
+    public int DuplicateWarningMinutes { get; set; } = 30;
+}
+
 public sealed class SettingsOptions
 {
     public const string SectionName = "Settings";

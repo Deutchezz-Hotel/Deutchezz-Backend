@@ -13,4 +13,5 @@ public interface ISettingsProvider
     bool RequireFullPaymentAtCheckIn { get; }
     bool RequirePaymentBeforeCheckOut { get; }
     bool EarlyCheckOutRequiresAdmin { get; }
+    int DuplicateWarningMinutes { get; }
 }

@@ -11,7 +11,11 @@ public enum ErrorType
     Failure
 }
 
-public record Error(ErrorType Type, string Code, string? Description = null)
+public record Error(
+    ErrorType Type,
+    string Code,
+    string? Description = null,
+    IReadOnlyDictionary<string, object?>? Extensions = null)
 {
     public static Error NotFound(string code = "not.found", string? description = null) =>
         new(ErrorType.NotFound, code, description);
@@ -33,4 +37,9 @@ public record Error(ErrorType Type, string Code, string? Description = null)
 
     public static Error Failure(string code = "failure", string? description = null) =>
         new(ErrorType.Failure, code, description);
+
+    /// <summary>Returns a copy carrying extra RFC 7807 extension members (e.g. the
+    /// <c>booking.possible_duplicate</c> warning's <c>minutesAgo</c> and masked reference).</summary>
+    public Error WithExtensions(IReadOnlyDictionary<string, object?> extensions) =>
+        this with { Extensions = extensions };
 }

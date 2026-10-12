@@ -30,14 +30,20 @@ public class PaymentService(IAppDbContext db, IActivityLogger activityLogger, IE
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
 
-        if (booking.Status is BookingStatus.Cancelled)
-            return Error.Conflict("payment.booking_closed", "Cannot record a payment for a cancelled booking");
-
+        // 7l: a payment is only valid against an outstanding balance. A cancelled booking, or one
+        // that is already fully paid (TotalAmount − Σ Paid payments ≤ 0), has no balance due.
         var paid = await db.Payments
-            .Where(p => p.BookingId == request.BookingId && p.Amount > 0)
+            .Where(p => p.BookingId == request.BookingId && p.Status == PaymentStatus.Paid)
             .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
+        var balanceDue = booking.TotalAmount - paid;
 
-        if (paid + request.Amount > booking.TotalAmount)
+        if (booking.Status == BookingStatus.Cancelled || balanceDue <= 0m)
+            return Error.Conflict("payment.no_balance_due",
+                booking.Status == BookingStatus.Cancelled
+                    ? "Cannot record a payment for a cancelled booking"
+                    : "This booking is fully paid and has no balance due");
+
+        if (request.Amount > balanceDue)
             return Error.Conflict("payment.overpayment",
                 "Payment would exceed the booking total (overpayment is rejected)");
 

@@ -577,7 +577,7 @@ public class StayChangeTests(HotelWebApplicationFactory factory) : IntegrationTe
                 checkOutDate = Clock.Today.AddDays(602),
                 adults = 1,
                 children = 0,
-                guest = new { firstName = "Change", lastName = "Guest", email, phoneNumber = "08010000000" },
+                guest = new { firstName = "Change", lastName = "Guest", email, phoneNumber = UniquePhone() },
                 rooms = new[] { new { roomTypeId = standardId, quantity = 1 } },
                 specialRequests = (string?)null
             })

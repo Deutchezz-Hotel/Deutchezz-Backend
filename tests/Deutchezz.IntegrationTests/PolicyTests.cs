@@ -119,7 +119,7 @@ public class PolicyTests(HotelWebApplicationFactory factory) : IntegrationTestBa
                     firstName = "Policy",
                     lastName = "Test",
                     email = $"policy-{Guid.NewGuid():N}@example.com",
-                    phoneNumber = "08010000000"
+                    phoneNumber = UniquePhone()
                 },
                 rooms = new[] { new { roomTypeId, quantity = 1 } },
                 specialRequests = (string?)null

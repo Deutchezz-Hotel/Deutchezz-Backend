@@ -13,7 +13,8 @@ public record CreateBookingRequest(
     int Children,
     GuestInfoRequest Guest,
     List<BookingRoomRequest> Rooms,
-    string? SpecialRequests);
+    string? SpecialRequests,
+    bool AcknowledgeDuplicate = false);
 
 public record ReceptionGuestRequest(string FirstName, string LastName, string PhoneNumber);
 
@@ -113,7 +114,8 @@ public record BookingListItemResponse(
     string PaymentStatus,
     string Source,
     string? CreatedByName,
-    decimal TotalAmount);
+    decimal TotalAmount,
+    decimal BalanceDue);
 
 public record CheckInResponse(
     Guid BookingId,
@@ -151,15 +153,24 @@ public class BookingSearchQuery : QueryParameters
     private string? _paymentStatus;
     private string? _reference;
     private string? _source;
+    private string? _search;
 
     public string? Status { get => _status; set => _status = value?.ToLowerInvariant(); }
     public string? PaymentStatus { get => _paymentStatus; set => _paymentStatus = value?.ToLowerInvariant(); }
     public string? Reference { get => _reference; set => _reference = value?.Trim(); }
     public string? Source { get => _source; set => _source = value?.ToLowerInvariant(); }
+
+    /// <summary>Free-text search over the guest's full name or the booking reference (7l).</summary>
+    public string? Search { get => _search; set => _search = value?.Trim(); }
+
     public DateOnly? From { get; set; }
     public DateOnly? To { get; set; }
 
     /// <summary>Reception filter: confirmed bookings whose check-in date is before today
     /// (Africa/Lagos) — guests who have not arrived yet.</summary>
     public bool OverdueArrivals { get; set; }
+
+    /// <summary>Reception filter (7l): only bookings whose outstanding balance is positive and
+    /// which are not cancelled. Backs the "record payment" combobox.</summary>
+    public bool HasBalanceDue { get; set; }
 }
