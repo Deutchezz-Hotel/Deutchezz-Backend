@@ -74,11 +74,28 @@ public static class OptionsExtensions
             .Validate(o => o.Smtp.Port > 0 && o.Smtp.Port <= 65535, "Email:Smtp:Port must be a valid TCP port.")
             .Validate(o => Uri.TryCreate(o.FrontendBaseUrl, UriKind.Absolute, out _),
                 "Email:FrontendBaseUrl must be an absolute URL such as http://localhost:5173.")
-            .Validate(o => string.IsNullOrWhiteSpace(o.AdminNotificationAddress) || o.AdminNotificationAddress.Contains('@'),
-                "Email:AdminNotificationAddress must be a valid email address or left empty.")
+            .Validate(o => IsDeliverableAdminAddress(o.AdminNotificationAddress),
+                "Email:AdminNotificationAddress must be a real, deliverable mailbox (placeholder or " +
+                "'.local' addresses are rejected) or left empty to disable staff alerts.")
             .ValidateOnStart();
 
         return services;
+    }
+
+    /// <summary>
+    /// True when <paramref name="address"/> is empty (staff alerts disabled) or looks like a
+    /// real, routable mailbox. Catches the un-replaced <c>CHANGE_ME@…</c> / <c>…@deutchezz.local</c>
+    /// placeholders that previously passed validation and bounced at the mail exchanger.
+    /// </summary>
+    internal static bool IsDeliverableAdminAddress(string address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+            return true;
+
+        var trimmed = address.Trim();
+        return trimmed.Contains('@')
+            && !trimmed.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase)
+            && !trimmed.EndsWith(".local", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

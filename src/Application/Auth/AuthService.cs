@@ -124,7 +124,10 @@ public class AuthService(
             var (subject, html, text) = PasswordResetEmail.Build(new PasswordResetModel(
                 string.IsNullOrWhiteSpace(name) ? "there" : name, url, 60));
 
-            _ = emailSender.SendAsync(user.Email, subject, html, text, cancellationToken);
+            // Sent synchronously with CancellationToken.None: the request token is cancelled as
+            // soon as the response is written, which would abort a fire-and-forget SMTP send and
+            // silently drop the reset link.
+            await emailSender.SendAsync(user.Email, subject, html, text, CancellationToken.None);
 
             await activityLogger.LogAsync(user.Id, "user.password_reset_requested", "User", user.Id, null, cancellationToken);
         }
@@ -192,7 +195,9 @@ public class AuthService(
         var (subject, html, text) = EmailVerificationEmail.Build(new EmailVerificationModel(
             string.IsNullOrWhiteSpace(name) ? "there" : name, url));
 
-        _ = emailSender.SendAsync(user.Email, subject, html, text, cancellationToken);
+        // Await with CancellationToken.None so the SMTP handshake is not cancelled when the
+        // registration request completes (a cancelled send is swallowed by the email sender).
+        await emailSender.SendAsync(user.Email, subject, html, text, CancellationToken.None);
     }
 
     private string BuildFrontendUrl(string path, string email, string token)

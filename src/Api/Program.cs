@@ -124,11 +124,12 @@ app.Services.ValidateRequiredOptions();
     var emailOptions = app.Services.GetRequiredService<IOptions<EmailOptions>>().Value;
     var smtpReady = emailOptions.Smtp.HasCredentials && !string.IsNullOrWhiteSpace(emailOptions.Smtp.FromAddress);
     app.Logger.LogInformation(
-        "Transactional email transport: {Transport} (host {Host}:{Port}, from {From})",
+        "Transactional email transport: {Transport} (host {Host}:{Port}, from {From}, staff alerts to {AdminAddress})",
         smtpReady ? "SMTP" : "logging fallback (SMTP credentials not configured)",
         emailOptions.Smtp.Host,
         emailOptions.Smtp.Port,
-        string.IsNullOrWhiteSpace(emailOptions.Smtp.FromAddress) ? "(none)" : emailOptions.Smtp.FromAddress);
+        string.IsNullOrWhiteSpace(emailOptions.Smtp.FromAddress) ? "(none)" : emailOptions.Smtp.FromAddress,
+        string.IsNullOrWhiteSpace(emailOptions.AdminNotificationAddress) ? "(disabled)" : emailOptions.AdminNotificationAddress);
 }
 
 if (app.Environment.IsDevelopment())

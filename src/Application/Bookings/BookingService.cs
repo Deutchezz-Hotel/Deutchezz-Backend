@@ -219,7 +219,11 @@ public class BookingService(
             emailRooms,
             total));
 
-        _ = emailSender.SendAsync(request.Guest.Email, subject, html, text, CancellationToken.None);
+        // Await the sends sequentially and with CancellationToken.None. Fire-and-forget sends
+        // could be aborted when the request scope is torn down, and two concurrent logins to the
+        // same SMTP account can be throttled (one message silently dropped). Awaiting makes the
+        // result deterministic and observable.
+        await emailSender.SendAsync(request.Guest.Email, subject, html, text, CancellationToken.None);
 
         var deskAddress = emailOptions.Value.AdminNotificationAddress;
         if (!string.IsNullOrWhiteSpace(deskAddress))
@@ -234,7 +238,7 @@ public class BookingService(
                 nights,
                 emailRooms,
                 total));
-            _ = emailSender.SendAsync(deskAddress, alertSubject, alertHtml, alertText, CancellationToken.None);
+            await emailSender.SendAsync(deskAddress, alertSubject, alertHtml, alertText, CancellationToken.None);
         }
 
         var response = await MapAsync(booking.Id, cancellationToken);
