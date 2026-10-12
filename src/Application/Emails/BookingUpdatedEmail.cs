@@ -16,17 +16,6 @@ public static class BookingUpdatedEmail
     {
         var subject = $"Booking updated {model.BookingReference}";
 
-        var rowBuilder = new System.Text.StringBuilder();
-        foreach (var r in model.Rooms)
-        {
-            rowBuilder.Append("<tr>")
-                .Append($"<td style=\"padding:8px;border-bottom:1px solid #E4DAC8;\">{System.Net.WebUtility.HtmlEncode(r.RoomTypeName)} &times; {r.Quantity}</td>")
-                .Append($"<td style=\"padding:8px;border-bottom:1px solid #E4DAC8;text-align:right;\">{r.RatePerNight:N0}</td>")
-                .Append($"<td style=\"padding:8px;border-bottom:1px solid #E4DAC8;text-align:right;\">{r.Subtotal:N2}</td>")
-                .Append("</tr>");
-        }
-        var rows = rowBuilder.ToString();
-
         var body = $"""
             <p style="margin:0 0 16px;">Dear {System.Net.WebUtility.HtmlEncode(model.GuestName)},</p>
             <p style="margin:0 0 16px;">Your booking has been updated. Here is the latest summary of your stay.</p>
@@ -48,16 +37,8 @@ public static class BookingUpdatedEmail
               <tr><td style="padding:6px 0;"><strong style="color:#4A2C1A;">Nights:</strong> {model.Nights}</td></tr>
             </table>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:18px;">
-              <tr style="background:#4A2C1A;color:#F7F1E8;">
-                <th style="padding:8px;text-align:left;">Rooms</th>
-                <th style="padding:8px;text-align:right;">Rate / night (NGN)</th>
-                <th style="padding:8px;text-align:right;">Subtotal (NGN)</th>
-              </tr>
-              {rows}
-              <tr>
-                <td colspan="2" style="padding:12px 8px;text-align:right;font-weight:700;color:#4A2C1A;">Total</td>
-                <td style="padding:12px 8px;text-align:right;font-weight:700;color:#4A2C1A;">{model.TotalAmount:N2}</td>
-              </tr>
+              {EmailLayout.RoomLines(model.Rooms)}
+              {EmailLayout.TotalRow("Total", model.TotalAmount)}
             </table>
             <p style="margin:0;color:#6B5B4B;font-size:13px;">
               If you have any questions about these changes, please contact our reception.
@@ -73,6 +54,7 @@ public static class BookingUpdatedEmail
             $"Rooms: {string.Join(", ", model.Rooms.Select(r => $"{r.RoomTypeName} x{r.Quantity} @ {r.RatePerNight:N0}/night"))}",
             $"Total: NGN {model.TotalAmount:N2}");
 
-        return (subject, EmailLayout.Render("Booking updated", body), text);
+        return (subject, EmailLayout.Render("Booking updated", body,
+            $"Your booking {model.BookingReference} has been updated."), text);
     }
 }

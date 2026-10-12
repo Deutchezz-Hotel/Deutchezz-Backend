@@ -25,6 +25,7 @@ public static class EmailVerificationEmail
             $"The code expires in {model.ExpiryMinutes} minutes.",
             "If you did not create an account, you can ignore this email.");
 
-        return (subject, EmailLayout.Render("Verify your email", body), text);
+        return (subject, EmailLayout.Render("Verify your email", body,
+            "Your Deutchezz verification code is inside."), text);
     }
 }

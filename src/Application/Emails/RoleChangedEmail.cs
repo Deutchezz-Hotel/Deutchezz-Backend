@@ -23,6 +23,7 @@ public static class RoleChangedEmail
             "Sign out and sign in again to pick up the change.",
             "If you did not expect this, contact the hotel immediately.");
 
-        return (subject, EmailLayout.Render("Your account role has changed", body), text);
+        return (subject, EmailLayout.Render("Your account role has changed", body,
+            $"Your Deutchezz account role is now {model.Role}."), text);
     }
 }

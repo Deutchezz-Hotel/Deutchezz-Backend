@@ -50,6 +50,7 @@ public static class PaymentReceiptEmail
             $"Reference: {model.Reference ?? "-"}",
             $"Total: NGN {model.TotalAmount:N2} / Paid: NGN {model.TotalPaid:N2} / Balance: NGN {model.Balance:N2}");
 
-        return (subject, EmailLayout.Render("Payment received", body), text);
+        return (subject, EmailLayout.Render("Payment received", body,
+            $"We received NGN {model.Amount:N2} for booking {model.BookingReference}."), text);
     }
 }

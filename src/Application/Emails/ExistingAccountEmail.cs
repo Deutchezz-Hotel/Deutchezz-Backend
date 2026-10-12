@@ -26,6 +26,7 @@ public static class ExistingAccountEmail
             "Sign in instead, or use \"Forgot password\" if you need to reset it.",
             "If this was not you, you can ignore this email.");
 
-        return (subject, EmailLayout.Render("You already have an account", body), text);
+        return (subject, EmailLayout.Render("You already have an account", body,
+            "This email address already has a Deutchezz account."), text);
     }
 }

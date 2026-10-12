@@ -24,6 +24,7 @@ public static class PasswordChangedEmail
             "If you did not make this change, contact the hotel immediately.",
             "All other signed-in sessions have been signed out.");
 
-        return (subject, EmailLayout.Render("Your password was changed", body), text);
+        return (subject, EmailLayout.Render("Your password was changed", body,
+            "Your Deutchezz password was changed."), text);
     }
 }

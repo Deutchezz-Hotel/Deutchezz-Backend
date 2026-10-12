@@ -18,16 +18,6 @@ public static class StaffNewBookingAlertEmail
     {
         var subject = $"New booking {model.BookingReference} — {model.CheckInDate:yyyy-MM-dd}";
 
-        var rowBuilder = new System.Text.StringBuilder();
-        foreach (var r in model.Rooms)
-        {
-            rowBuilder.Append("<tr>")
-                .Append($"<td style=\"padding:8px;border-bottom:1px solid #E4DAC8;\">{System.Net.WebUtility.HtmlEncode(r.RoomTypeName)} &times; {r.Quantity}</td>")
-                .Append($"<td style=\"padding:8px;border-bottom:1px solid #E4DAC8;text-align:right;\">NGN {r.Subtotal:N2}</td>")
-                .Append("</tr>");
-        }
-        var rows = rowBuilder.ToString();
-
         var body = $"""
             <p style="margin:0 0 16px;">A new booking has been created. Please review for room assignment.</p>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F1E8;border-radius:6px;margin-bottom:18px;">
@@ -42,15 +32,8 @@ public static class StaffNewBookingAlertEmail
             <p style="margin:0 0 6px;"><strong>Check-in:</strong> {model.CheckInDate:yyyy-MM-dd}</p>
             <p style="margin:0 0 6px;"><strong>Check-out:</strong> {model.CheckOutDate:yyyy-MM-dd} ({model.Nights} night(s))</p>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:16px 0;">
-              <tr style="background:#4A2C1A;color:#F7F1E8;">
-                <th style="padding:8px;text-align:left;">Rooms</th>
-                <th style="padding:8px;text-align:right;">Subtotal (NGN)</th>
-              </tr>
-              {rows}
-              <tr>
-                <td style="padding:12px 8px;text-align:right;font-weight:700;color:#4A2C1A;">Total</td>
-                <td style="padding:12px 8px;text-align:right;font-weight:700;color:#4A2C1A;">NGN {model.TotalAmount:N2}</td>
-              </tr>
+              {EmailLayout.RoomLines(model.Rooms, showRate: false)}
+              {EmailLayout.TotalRow("Total", model.TotalAmount)}
             </table>
             """;
 
@@ -63,6 +46,7 @@ public static class StaffNewBookingAlertEmail
             $"Rooms: {string.Join(", ", model.Rooms.Select(r => $"{r.RoomTypeName} x{r.Quantity}"))}",
             $"Total: NGN {model.TotalAmount:N2}");
 
-        return (subject, EmailLayout.Render("New booking received", body), text);
+        return (subject, EmailLayout.Render("New booking received", body,
+            $"New booking {model.BookingReference} for {model.GuestName}."), text);
     }
 }

@@ -25,6 +25,7 @@ public static class PasswordResetEmail
             $"The code expires in {model.ExpiryMinutes} minutes.",
             "If you did not request this, you can ignore this email.");
 
-        return (subject, EmailLayout.Render("Reset your password", body), text);
+        return (subject, EmailLayout.Render("Reset your password", body,
+            "Use the code inside to reset your Deutchezz password."), text);
     }
 }
