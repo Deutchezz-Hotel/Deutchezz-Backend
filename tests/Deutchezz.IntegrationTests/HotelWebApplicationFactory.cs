@@ -38,6 +38,9 @@ public class HotelWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseSetting("Seed:AdminEmail", "admin@deutchezz.test");
         builder.UseSetting("Seed:AdminPassword", "Admin-Test-123!");
 
+        // Staff new-booking alerts are sent to this mailbox; enabled so tests can assert them.
+        builder.UseSetting("Email:AdminNotificationAddress", "desk@deutchezz.test");
+
         // Integration tests share a single loopback address, so the per-IP fixed windows from
         // production would throttle the suite. Raise them so tests exercise behaviour, not limits.
         builder.UseSetting("RateLimiting:Auth:PermitLimit", "100000");

@@ -28,6 +28,29 @@ public class AuthTests(HotelWebApplicationFactory factory) : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Register_sends_verification_email()
+    {
+        using var client = CreateClient();
+        var email = $"verify-{Guid.NewGuid():N}@example.com";
+
+        var response = await client.PostAsJsonAsync("/api/v1/auth/register", new
+        {
+            firstName = "Ada",
+            lastName = "Obi",
+            email,
+            password = "Customer-Test-123!",
+            phoneNumber = "08010000000"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var verification = EmailSender.Sent.FirstOrDefault(e => e.To == email);
+        Assert.NotNull(verification);
+        Assert.Contains("confirm", verification!.Subject, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("/verify-email", verification.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Login_with_wrong_password_returns_problem_details()
     {
         var customer = await RegisterCustomerAsync();
