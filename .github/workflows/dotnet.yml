@@ -35,6 +35,4 @@ jobs:
     - name: Build
       run: dotnet build --no-restore --configuration Release
     - name: Test
-      env:
-        DEUTCHEZZ_TEST_CONNECTION: Host=localhost;Port=5432;Username=postgres;******;Database=deutchezz_test
       run: dotnet test --no-restore --no-build --configuration Release --logger "console;verbosity=minimal"
