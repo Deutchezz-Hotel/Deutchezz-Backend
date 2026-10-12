@@ -415,7 +415,7 @@ public class AuthService(
         // new account immediately sees the bookings in its dashboard, and re-point any
         // notifications that were stored against the guest without a user id.
         var orphans = await db.Guests
-            .Where(g => g.UserId == null && g.Email.Trim().ToLower() == normalizedEmail)
+            .Where(g => g.UserId == null && g.Email != null && g.Email.Trim().ToLower() == normalizedEmail)
             .ToListAsync(cancellationToken);
 
         if (orphans.Count == 0)

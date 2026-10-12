@@ -15,6 +15,26 @@ public record CreateBookingRequest(
     List<BookingRoomRequest> Rooms,
     string? SpecialRequests);
 
+public record ReceptionGuestRequest(string FirstName, string LastName, string PhoneNumber);
+
+public record ReceptionCreateBookingRequest(
+    DateOnly CheckInDate,
+    DateOnly CheckOutDate,
+    int Adults,
+    int Children,
+    ReceptionGuestRequest Guest,
+    List<BookingRoomRequest> Rooms);
+
+public enum StaffCancellationReason
+{
+    GuestRequest,
+    NoShow,
+    BookedInError,
+    Other
+}
+
+public record ReceptionCancelBookingRequest(StaffCancellationReason Reason, string? Notes, bool RefundPaidAmounts);
+
 public record BookingLookupRequest(string BookingReference, string Email);
 
 public record CancelBookingRequest(string? Reason);
@@ -46,7 +66,8 @@ public record BookingDetailResponse(
     Guid Id,
     string BookingReference,
     string GuestFullName,
-    string GuestEmail,
+    string? GuestEmail,
+    string? GuestPhoneNumber,
     DateOnly CheckInDate,
     DateOnly CheckOutDate,
     int Nights,
@@ -55,6 +76,8 @@ public record BookingDetailResponse(
     string? SpecialRequests,
     string Status,
     string PaymentStatus,
+    string Source,
+    string? CreatedByName,
     decimal TotalAmount,
     List<BookingRoomTypeLineResponse> Lines,
     List<RoomAssignmentResponse> Assignments,
@@ -65,10 +88,14 @@ public record BookingListItemResponse(
     Guid Id,
     string BookingReference,
     string GuestFullName,
+    string? GuestEmail,
+    string? GuestPhoneNumber,
     DateOnly CheckInDate,
     DateOnly CheckOutDate,
     string Status,
     string PaymentStatus,
+    string Source,
+    string? CreatedByName,
     decimal TotalAmount);
 
 public record CheckInResponse(
@@ -95,10 +122,16 @@ public class BookingSearchQuery : QueryParameters
     private string? _status;
     private string? _paymentStatus;
     private string? _reference;
+    private string? _source;
 
     public string? Status { get => _status; set => _status = value?.ToLowerInvariant(); }
     public string? PaymentStatus { get => _paymentStatus; set => _paymentStatus = value?.ToLowerInvariant(); }
     public string? Reference { get => _reference; set => _reference = value?.Trim(); }
+    public string? Source { get => _source; set => _source = value?.ToLowerInvariant(); }
     public DateOnly? From { get; set; }
     public DateOnly? To { get; set; }
+
+    /// <summary>Reception filter: confirmed bookings whose check-in date is before today
+    /// (Africa/Lagos) — guests who have not arrived yet.</summary>
+    public bool OverdueArrivals { get; set; }
 }

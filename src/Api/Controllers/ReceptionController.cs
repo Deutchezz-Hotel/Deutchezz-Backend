@@ -36,20 +36,34 @@ public class ReceptionController(
 
     [EnableRateLimiting("booking-create")]
     [HttpPost("bookings")]
-    public async Task<IActionResult> CreateBooking([FromBody] CreateBookingRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> CreateBooking([FromBody] ReceptionCreateBookingRequest request, CancellationToken cancellationToken)
     {
         var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault();
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             return Error.Validation("idempotency_key_required", "The Idempotency-Key header is required").ToActionResult();
 
         var userId = this.GetUserId();
-        var result = await bookings.CreateAsync(request, userId, idempotencyKey, cancellationToken);
+        if (userId is null)
+            return Error.Unauthorized("auth.required", "Authentication is required to access this resource.").ToActionResult();
+
+        var result = await bookings.ReceptionCreateAsync(request, userId.Value, idempotencyKey, cancellationToken);
         if (result.IsFailure)
             return result.ToActionResult();
 
         return result.Value.Replay
             ? Ok(result.Value)
             : StatusCode(StatusCodes.Status201Created, result.Value);
+    }
+
+    [HttpPost("bookings/{id:guid}/cancel")]
+    public async Task<IActionResult> CancelBooking(Guid id, [FromBody] ReceptionCancelBookingRequest request, CancellationToken cancellationToken)
+    {
+        var userId = this.GetUserId();
+        if (userId is null)
+            return Error.Unauthorized("auth.required", "Authentication is required to access this resource.").ToActionResult();
+
+        var result = await bookings.ReceptionCancelAsync(id, request, userId.Value, cancellationToken);
+        return result.ToActionResult();
     }
 
     [HttpPost("bookings/{id:guid}/assign-rooms")]

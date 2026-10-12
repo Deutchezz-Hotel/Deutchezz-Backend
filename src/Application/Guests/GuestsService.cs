@@ -39,7 +39,7 @@ public class GuestsService(IAppDbContext db) : IGuestsService
         {
             ["firstName"] = g => g.FirstName,
             ["lastName"] = g => g.LastName,
-            ["email"] = g => g.Email,
+            ["email"] = g => g.Email!,
             ["createdAt"] = g => g.CreatedAt
         };
 
@@ -52,7 +52,7 @@ public class GuestsService(IAppDbContext db) : IGuestsService
             var term = query.Search.ToLowerInvariant();
             q = q.Where(g => g.FirstName.ToLower().Contains(term)
                 || g.LastName.ToLower().Contains(term)
-                || g.Email.ToLower().Contains(term));
+                || (g.Email != null && g.Email.ToLower().Contains(term)));
         }
 
         if (query.From is not null)
@@ -66,7 +66,7 @@ public class GuestsService(IAppDbContext db) : IGuestsService
             .ApplySort(query, Sortable, qq => qq.OrderByDescending(g => g.CreatedAt))
             .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
-            .Select(g => new GuestResponse(g.Id, g.FirstName, g.LastName, g.Email, g.PhoneNumber, g.UserId, g.CreatedAt))
+            .Select(g => new GuestResponse(g.Id, g.FirstName, g.LastName, g.Email ?? "", g.PhoneNumber, g.UserId, g.CreatedAt))
             .ToListAsync(cancellationToken);
 
         return new PaginatedResult<GuestResponse>(items, total, query.Page, query.PageSize);
@@ -78,6 +78,6 @@ public class GuestsService(IAppDbContext db) : IGuestsService
         if (guest is null)
             return Error.NotFound("guest.not_found", "Guest not found");
 
-        return new GuestResponse(guest.Id, guest.FirstName, guest.LastName, guest.Email, guest.PhoneNumber, guest.UserId, guest.CreatedAt);
+        return new GuestResponse(guest.Id, guest.FirstName, guest.LastName, guest.Email ?? "", guest.PhoneNumber, guest.UserId, guest.CreatedAt);
     }
 }
