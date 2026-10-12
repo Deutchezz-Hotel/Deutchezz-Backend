@@ -3,6 +3,7 @@ using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
 using Deutchezz.Domain.Common;
+using Deutchezz.Domain.Constants;
 using Deutchezz.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -52,7 +53,7 @@ public class StaffService(
     UserManager<User> userManager,
     IActivityLogger activityLogger) : IStaffService
 {
-    private static readonly string[] AllowedRoles = ["Receptionist", "Administrator"];
+    private static readonly string[] AllowedRoles = [Roles.Receptionist, Roles.Administrator];
 
     private static readonly Dictionary<string, Expression<Func<User, object>>> Sortable =
         new(StringComparer.OrdinalIgnoreCase)
@@ -66,7 +67,22 @@ public class StaffService(
 
     public async Task<Result<PaginatedResult<StaffResponse>>> ListAsync(StaffQuery query, CancellationToken cancellationToken)
     {
-        var q = db.Users.AsQueryable();
+        // The staff section only ever shows users holding a staff role; customers belong to the
+        // users directory (`GET /api/v1/admin/users`).
+        var staffRoles = await db.Roles
+            .Where(r => r.Name == Roles.Receptionist || r.Name == Roles.Administrator)
+            .ToDictionaryAsync(r => r.Name!, r => r.Id, cancellationToken);
+
+        var staffRoleIds = staffRoles.Values.ToList();
+        var q = db.Users.Where(u => db.UserRoles.Any(ur => ur.UserId == u.Id && staffRoleIds.Contains(ur.RoleId)));
+
+        if (!string.IsNullOrWhiteSpace(query.Role))
+        {
+            if (!staffRoles.TryGetValue(CanonicalRole(query.Role), out var roleId))
+                return new PaginatedResult<StaffResponse>([], 0, query.Page, query.PageSize);
+
+            q = q.Where(u => db.UserRoles.Any(ur => ur.UserId == u.Id && ur.RoleId == roleId));
+        }
 
         if (query.IsActive is not null)
             q = q.Where(u => u.IsActive == query.IsActive);
@@ -192,6 +208,15 @@ public class StaffService(
         if (user is null)
             return Error.NotFound("staff.not_found", "Staff member not found");
 
+        if (!isActive && user.IsActive)
+        {
+            var roles = await userManager.GetRolesAsync(user);
+            if (roles.Contains(Roles.Administrator)
+                && await CountActiveAdministratorsAsync(excluding: user.Id, cancellationToken) == 0)
+                return Error.Conflict("user.last_administrator",
+                    "The last active administrator cannot be deactivated.");
+        }
+
         user.IsActive = isActive;
         var update = await userManager.UpdateAsync(user);
         if (!update.Succeeded)
@@ -206,8 +231,30 @@ public class StaffService(
     private async Task<StaffResponse> ToResponseAsync(User user, CancellationToken cancellationToken)
     {
         var roles = await userManager.GetRolesAsync(user);
-        var role = roles.FirstOrDefault() ?? "Receptionist";
+        var role = roles.FirstOrDefault() ?? Roles.Customer;
         return new StaffResponse(user.Id, user.FirstName ?? "", user.LastName ?? "", user.Email ?? "",
             user.PhoneNumber, role, user.IsActive, user.CreatedAt);
     }
+
+    private async Task<int> CountActiveAdministratorsAsync(Guid? excluding, CancellationToken cancellationToken)
+    {
+        var adminRoleId = await db.Roles
+            .Where(r => r.Name == Roles.Administrator)
+            .Select(r => (Guid?)r.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (adminRoleId is null)
+            return 0;
+
+        return await db.Users.CountAsync(u => u.IsActive
+            && (excluding == null || u.Id != excluding.Value)
+            && db.UserRoles.Any(ur => ur.UserId == u.Id && ur.RoleId == adminRoleId.Value), cancellationToken);
+    }
+
+    private static string CanonicalRole(string role) =>
+        role.Trim().ToLowerInvariant() switch
+        {
+            "receptionist" => Roles.Receptionist,
+            "administrator" => Roles.Administrator,
+            _ => role.Trim()
+        };
 }

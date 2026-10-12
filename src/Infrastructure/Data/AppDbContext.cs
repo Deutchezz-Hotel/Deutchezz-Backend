@@ -9,6 +9,8 @@ namespace Deutchezz.Infrastructure.Data;
 public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbContext<User, Role, Guid>(options), IAppDbContext
 {
     public DbSet<Guest> Guests => Set<Guest>();
+    public new DbSet<Role> Roles => Set<Role>();
+    public new DbSet<Microsoft.AspNetCore.Identity.IdentityUserRole<Guid>> UserRoles => Set<Microsoft.AspNetCore.Identity.IdentityUserRole<Guid>>();
     public DbSet<RoomType> RoomTypes => Set<RoomType>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Booking> Bookings => Set<Booking>();

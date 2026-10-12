@@ -247,8 +247,15 @@ public class AuthService(
 
     public async Task<Result<LoginResponse>> RefreshAsync(string currentRefreshToken, CancellationToken cancellationToken)
     {
-        var result = await tokenService.RotateRefreshTokenAsync(currentRefreshToken, cancellationToken);
-        return new LoginResponse(result.accessToken, result.refreshToken, result.expiresAt, string.Empty);
+        try
+        {
+            var result = await tokenService.RotateRefreshTokenAsync(currentRefreshToken, cancellationToken);
+            return new LoginResponse(result.accessToken, result.refreshToken, result.expiresAt, string.Empty);
+        }
+        catch (Microsoft.IdentityModel.Tokens.SecurityTokenException)
+        {
+            return Error.Unauthorized("auth.invalid_refresh_token", "The refresh token is invalid or has expired.");
+        }
     }
 
     public async Task<Result> LogoutAsync(Guid userId, CancellationToken cancellationToken)

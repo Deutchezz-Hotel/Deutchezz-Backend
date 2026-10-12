@@ -10,6 +10,7 @@ using Deutchezz.Application.Rooms;
 using Deutchezz.Application.RoomTypes;
 using Deutchezz.Application.Settings;
 using Deutchezz.Application.Staff;
+using Deutchezz.Application.Users;
 using Deutchezz.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,6 +26,7 @@ public class AdminController(
     IBookingService bookings,
     IGuestsService guests,
     IStaffService staff,
+    IUserAdminService users,
     IPaymentService payments,
     INotificationService notifications,
     IAdminSettingsService settings,
@@ -140,6 +142,25 @@ public class AdminController(
     public async Task<IActionResult> ListGuests([FromQuery] GuestQuery query, CancellationToken cancellationToken)
     {
         var result = await guests.ListAsync(query, cancellationToken);
+        return result.ToActionResult();
+    }
+
+    // ----- Users -----
+
+    [HttpGet("users")]
+    public async Task<IActionResult> ListUsers([FromQuery] UserAdminQuery query, CancellationToken cancellationToken)
+    {
+        var result = await users.ListAsync(query, cancellationToken);
+        return result.ToActionResult();
+    }
+
+    [HttpPatch("users/{id:guid}/role")]
+    public async Task<IActionResult> ChangeUserRole(Guid id, [FromBody] ChangeUserRoleRequest request, CancellationToken cancellationToken)
+    {
+        var userId = this.GetUserId();
+        if (userId is null) return Error.Unauthorized("auth.required", "Authentication is required to access this resource.").ToActionResult();
+
+        var result = await users.ChangeRoleAsync(id, request, userId.Value, cancellationToken);
         return result.ToActionResult();
     }
 
