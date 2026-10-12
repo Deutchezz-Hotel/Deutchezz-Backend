@@ -267,27 +267,49 @@ public class BookingService(
 
     private async Task<Guest> FindOrCreateGuestAsync(GuestInfoRequest info, Guid? userId, CancellationToken cancellationToken)
     {
-        if (userId is not null)
+        var normalizedEmail = NormalizeEmail(info.Email);
+
+        // Resolve the account that owns this booking: the authenticated caller, or — for a
+        // guest checkout — the registered account with the same email. Without this second
+        // lookup a logged-in user whose booking request arrives without a bearer token (only a
+        // valid email) gets an orphaned anonymous guest, so the booking never shows in their
+        // dashboard and reuses a stale guest name.
+        var owner = userId is not null
+            ? await db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            : await db.Users.FirstOrDefaultAsync(
+                u => u.Email != null && u.Email.Trim().ToLower() == normalizedEmail, cancellationToken);
+
+        if (owner is not null)
         {
-            var existing = await db.Guests.FirstOrDefaultAsync(g => g.UserId == userId, cancellationToken);
+            var existing = await db.Guests.FirstOrDefaultAsync(g => g.UserId == owner.Id, cancellationToken);
             if (existing is not null)
                 return existing;
 
+            // Adopt a pre-existing anonymous guest with the same email instead of duplicating it,
+            // and refresh its name from the account so reports show the correct guest.
+            var orphan = await db.Guests.FirstOrDefaultAsync(
+                g => g.UserId == null && g.Email.Trim().ToLower() == normalizedEmail, cancellationToken);
+            if (orphan is not null)
+            {
+                orphan.UserId = owner.Id;
+                if (!string.IsNullOrWhiteSpace(owner.FirstName)) orphan.FirstName = owner.FirstName;
+                if (!string.IsNullOrWhiteSpace(owner.LastName)) orphan.LastName = owner.LastName;
+                return orphan;
+            }
+
             var created = new Guest
             {
-                UserId = userId,
-                FirstName = info.FirstName,
-                LastName = info.LastName,
+                UserId = owner.Id,
+                FirstName = !string.IsNullOrWhiteSpace(owner.FirstName) ? owner.FirstName : info.FirstName,
+                LastName = !string.IsNullOrWhiteSpace(owner.LastName) ? owner.LastName : info.LastName,
                 Email = info.Email,
-                PhoneNumber = info.PhoneNumber
+                PhoneNumber = info.PhoneNumber ?? owner.PhoneNumber
             };
             db.Guests.Add(created);
             return created;
         }
 
-        // SoT 7c: anonymous guests are found by normalized email only among guests without a
-        // registered user account; an anonymous booking is never attached to a registered user's guest.
-        var normalizedEmail = info.Email.Trim().ToLowerInvariant();
+        // Anonymous booking with no matching account: reuse an existing anonymous guest by email.
         var existingAnonymous = await db.Guests
             .FirstOrDefaultAsync(g => g.UserId == null && g.Email.Trim().ToLower() == normalizedEmail, cancellationToken);
         if (existingAnonymous is not null)
@@ -303,6 +325,14 @@ public class BookingService(
         db.Guests.Add(anonymous);
         return anonymous;
     }
+
+    private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+    private async Task<string?> GetUserEmailAsync(Guid userId, CancellationToken cancellationToken) =>
+        await db.Users.Where(u => u.Id == userId).Select(u => u.Email).FirstOrDefaultAsync(cancellationToken)
+            is { Length: > 0 } email
+            ? NormalizeEmail(email)
+            : null;
 
     public async Task<Result<BookingDetailResponse>> LookupAsync(BookingLookupRequest request, CancellationToken cancellationToken)
     {
@@ -329,9 +359,13 @@ public class BookingService(
 
         if (userId is not null)
         {
+            var ownerEmail = await GetUserEmailAsync(userId.Value, cancellationToken);
             booking = await db.Bookings
                 .Include(b => b.Guest)
-                .FirstOrDefaultAsync(b => (id == null || b.Id == id) && b.Guest != null && b.Guest.UserId == userId, cancellationToken);
+                .FirstOrDefaultAsync(b => (id == null || b.Id == id) && b.Guest != null &&
+                    (b.Guest.UserId == userId ||
+                     (b.Guest.UserId == null && ownerEmail != null && b.Guest.Email.Trim().ToLower() == ownerEmail)),
+                    cancellationToken);
         }
         else if (lookup is not null)
         {
@@ -464,9 +498,13 @@ public class BookingService(
     public async Task<Result<BookingDetailResponse>> GetByIdForOwnerAsync(Guid id, Guid userId, CancellationToken cancellationToken)
     {
         // Ownership is part of the query: someone else's booking is a 404, not a 403.
+        var ownerEmail = await GetUserEmailAsync(userId, cancellationToken);
         var exists = await db.Bookings
             .Include(b => b.Guest)
-            .AnyAsync(b => b.Id == id && b.Guest != null && b.Guest.UserId == userId, cancellationToken);
+            .AnyAsync(b => b.Id == id && b.Guest != null &&
+                (b.Guest.UserId == userId ||
+                 (b.Guest.UserId == null && ownerEmail != null && b.Guest.Email.Trim().ToLower() == ownerEmail)),
+                cancellationToken);
 
         if (!exists)
             return Error.NotFound("booking.not_found", "Booking not found");
@@ -511,8 +549,14 @@ public class BookingService(
     public async Task<Result<PaginatedResult<BookingListItemResponse>>> ListForCustomerAsync(
         Guid userId, BookingSearchQuery query, CancellationToken cancellationToken)
     {
+        // Ownership by user id, plus a fallback for orphaned anonymous guests whose email
+        // matches the account (a booking made before the account existed or arriving without a
+        // bearer token) so it still appears in the customer's dashboard.
+        var ownerEmail = await GetUserEmailAsync(userId, cancellationToken);
         var q = db.Bookings.Include(b => b.Guest)
-            .Where(b => b.Guest != null && b.Guest.UserId == userId);
+            .Where(b => b.Guest != null &&
+                (b.Guest.UserId == userId ||
+                 (b.Guest.UserId == null && ownerEmail != null && b.Guest.Email.Trim().ToLower() == ownerEmail)));
 
         if (!string.IsNullOrWhiteSpace(query.Status) && Enum.TryParse<BookingStatus>(query.Status, true, out var status))
             q = q.Where(b => b.Status == status);
