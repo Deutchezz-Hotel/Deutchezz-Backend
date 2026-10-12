@@ -53,6 +53,26 @@ public static class OptionsExtensions
             .Bind(configuration.GetSection(JobsOptions.SectionName))
             .Validate(o => o.PendingExpiryIntervalMinutes > 0,
                 "Jobs:PendingExpiryIntervalMinutes must be greater than 0.")
+            .Validate(o => o.VerificationCleanupIntervalMinutes > 0,
+                "Jobs:VerificationCleanupIntervalMinutes must be greater than 0.")
+            .ValidateOnStart();
+
+        services.AddOptions<AuthOptions>()
+            .Bind(configuration.GetSection(AuthOptions.SectionName))
+            .Validate(o => o.CodeMinutes > 0, "Auth:CodeMinutes must be greater than 0.")
+            .Validate(o => o.ResendCooldownSeconds >= 0, "Auth:ResendCooldownSeconds must not be negative.")
+            .Validate(o => o.MaxSendsPerHour > 0, "Auth:MaxSendsPerHour must be greater than 0.")
+            .Validate(o => o.PendingRegistrationHours > 0, "Auth:PendingRegistrationHours must be greater than 0.")
+            .Validate(o => o.MaxFailedAttempts > 0, "Auth:MaxFailedAttempts must be greater than 0.")
+            .ValidateOnStart();
+
+        services.AddOptions<SecurityOptions>()
+            .Bind(configuration.GetSection(SecurityOptions.SectionName))
+            .Validate(
+                o => Encoding.UTF8.GetByteCount(o.OtpHmacKey) >= 32,
+                "Security:OtpHmacKey is missing or shorter than 32 bytes. Generate one with: $b = New-Object byte[] 64; " +
+                "[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); " +
+                "then set it via: dotnet user-secrets set \"Security:OtpHmacKey\" ([Convert]::ToBase64String($b)) --project src/Deutchezz.csproj")
             .ValidateOnStart();
 
         services.AddOptions<CorsOptions>()
@@ -65,6 +85,7 @@ public static class OptionsExtensions
         services.AddOptions<RateLimitingOptions>()
             .Bind(configuration.GetSection(RateLimitingOptions.SectionName))
             .Validate(o => o.Auth.PermitLimit > 0 && o.Auth.WindowSeconds > 0, "RateLimiting:Auth PermitLimit/WindowSeconds must be positive.")
+            .Validate(o => o.Otp.PermitLimit > 0 && o.Otp.WindowSeconds > 0, "RateLimiting:Otp PermitLimit/WindowSeconds must be positive.")
             .Validate(o => o.Lookup.PermitLimit > 0 && o.Lookup.WindowSeconds > 0, "RateLimiting:Lookup PermitLimit/WindowSeconds must be positive.")
             .Validate(o => o.BookingCreate.PermitLimit > 0 && o.BookingCreate.WindowSeconds > 0, "RateLimiting:BookingCreate PermitLimit/WindowSeconds must be positive.")
             .ValidateOnStart();
@@ -114,5 +135,7 @@ public static class OptionsExtensions
         _ = services.GetRequiredService<IOptions<RateLimitingOptions>>().Value;
         _ = services.GetRequiredService<IOptions<EmailOptions>>().Value;
         _ = services.GetRequiredService<IOptions<JobsOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<AuthOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<SecurityOptions>>().Value;
     }
 }

@@ -36,6 +36,11 @@ public static class DependencyInjection
                 options.Password.RequiredLength = 8;
                 options.Password.RequireNonAlphanumeric = false;
                 options.User.RequireUniqueEmail = true;
+
+                // Uniform credential failures + lockout on repeated wrong passwords (v1.6).
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.MaxFailedAccessAttempts = 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             })
             .AddEntityFrameworkStores<AppDbContext>()
             .AddDefaultTokenProviders();
@@ -102,6 +107,7 @@ public static class DependencyInjection
         services.AddScoped<IDbConflictDetector, NpgsqlConflictDetector>();
         services.AddScoped<IActivityLogger, ActivityLogger>();
         services.AddScoped<ITokenService, TokenService>();
+        services.AddSingleton<IOtpCodeService, HmacOtpCodeService>();
 
         services.AddScoped<SmtpEmailSender>();
         services.AddScoped<LoggingEmailSender>();

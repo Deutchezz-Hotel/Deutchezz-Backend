@@ -52,6 +52,35 @@ public sealed class JobsOptions
     public const string SectionName = "Jobs";
 
     public int PendingExpiryIntervalMinutes { get; set; } = 15;
+    public int VerificationCleanupIntervalMinutes { get; set; } = 60;
+}
+
+public sealed class AuthOptions
+{
+    public const string SectionName = "Auth";
+
+    /// <summary>Minutes a 6-digit verification/reset code stays valid.</summary>
+    public int CodeMinutes { get; set; } = 15;
+
+    /// <summary>Seconds a user must wait before a code can be resent.</summary>
+    public int ResendCooldownSeconds { get; set; } = 60;
+
+    /// <summary>Maximum number of codes that may be sent to one address per hour.</summary>
+    public int MaxSendsPerHour { get; set; } = 5;
+
+    /// <summary>How long an unverified pending registration is kept before cleanup.</summary>
+    public int PendingRegistrationHours { get; set; } = 24;
+
+    /// <summary>Failed code guesses allowed before the code is invalidated.</summary>
+    public int MaxFailedAttempts { get; set; } = 5;
+}
+
+public sealed class SecurityOptions
+{
+    public const string SectionName = "Security";
+
+    /// <summary>HMAC key used to hash verification/reset codes (user secrets only).</summary>
+    public string OtpHmacKey { get; set; } = string.Empty;
 }
 
 public sealed class CorsOptions
@@ -66,6 +95,7 @@ public sealed class RateLimitingOptions
     public const string SectionName = "RateLimiting";
 
     public RateLimitRule Auth { get; set; } = new() { PermitLimit = 10 };
+    public RateLimitRule Otp { get; set; } = new() { PermitLimit = 5 };
     public RateLimitRule Lookup { get; set; } = new() { PermitLimit = 5 };
     public RateLimitRule BookingCreate { get; set; } = new() { PermitLimit = 10 };
 }
@@ -85,11 +115,8 @@ public sealed class EmailOptions
     /// <summary>Inbox that receives a staff alert for every new booking. Empty disables the alert.</summary>
     public string AdminNotificationAddress { get; set; } = string.Empty;
 
-    /// <summary>Base URL of the web app, used to build links in verification/reset emails.</summary>
+    /// <summary>Base URL of the web app, used to build links in emails.</summary>
     public string FrontendBaseUrl { get; set; } = "http://localhost:5173";
-
-    /// <summary>When true, unconfirmed accounts are blocked from logging in.</summary>
-    public bool RequireConfirmedEmail { get; set; }
 
     /// <summary>SmtpUsername and SmtpPassword are set via user secrets only.</summary>
     public sealed class SmtpOptions

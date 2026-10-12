@@ -18,6 +18,8 @@ public interface IAppDbContext
     DbSet<Notification> Notifications { get; }
     DbSet<ActivityLog> ActivityLogs { get; }
     DbSet<Setting> Settings { get; }
+    DbSet<PendingRegistration> PendingRegistrations { get; }
+    DbSet<PasswordResetCode> PasswordResetCodes { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);

@@ -77,6 +77,8 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("auth", context =>
         FixedWindowPartition(context, p => p.Auth.PermitLimit, p => p.Auth.WindowSeconds));
+    options.AddPolicy("otp", context =>
+        FixedWindowPartition(context, p => p.Otp.PermitLimit, p => p.Otp.WindowSeconds));
     options.AddPolicy("lookup", context =>
         FixedWindowPartition(context, p => p.Lookup.PermitLimit, p => p.Lookup.WindowSeconds));
     options.AddPolicy("booking-create", context =>

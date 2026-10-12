@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -30,23 +31,45 @@ public abstract class IntegrationTestBase(HotelWebApplicationFactory factory)
         return client;
     }
 
-    protected async Task<LoginResult> RegisterCustomerAsync()
+    private static int _phoneCounter;
+
+    /// <summary>A unique, valid Nigerian-format phone number for a test account.</summary>
+    protected static string UniquePhone() => "0" + System.Threading.Interlocked.Increment(ref _phoneCounter).ToString("D10");
+
+    /// <summary>
+    /// Runs the full verified-registration flow (register → read emailed code → verify-email) and
+    /// returns the resulting signed-in session.
+    /// </summary>
+    protected async Task<LoginResult> RegisterCustomerAsync(
+        string? email = null,
+        string? firstName = "Test",
+        string? lastName = "Customer",
+        string? phoneNumber = null)
     {
-        var email = $"customer-{Guid.NewGuid():N}@example.com";
+        email ??= $"customer-{Guid.NewGuid():N}@example.com";
+        var phone = phoneNumber ?? UniquePhone();
+
         using var client = Factory.CreateClient();
         var response = await client.PostAsJsonAsync("/api/v1/auth/register", new
         {
-            firstName = "Test",
-            lastName = "Customer",
+            firstName,
+            lastName,
             email,
             password = "Customer-Test-123!",
-            phoneNumber = "08010000000"
+            phoneNumber = phone
         });
 
-        response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<LoginResult>()
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        var code = EmailSender.CodeFor(email)
+            ?? throw new InvalidOperationException("No verification code was emailed after registration.");
+
+        var verify = await client.PostAsJsonAsync("/api/v1/auth/verify-email", new { email, code });
+        verify.EnsureSuccessStatusCode();
+
+        var body = await verify.Content.ReadFromJsonAsync<LoginResult>()
             ?? throw new InvalidOperationException("Empty login response");
-        return body with { Email = email };
+        return body with { Email = email, Phone = phone };
     }
 
     protected async Task<LoginResult> LoginAsAdminAsync()
@@ -103,5 +126,6 @@ public abstract class IntegrationTestBase(HotelWebApplicationFactory factory)
     public record LoginResult(string AccessToken, string RefreshToken, DateTime AccessTokenExpiresAt, string Role)
     {
         public string Email { get; init; } = string.Empty;
+        public string Phone { get; init; } = string.Empty;
     }
 }

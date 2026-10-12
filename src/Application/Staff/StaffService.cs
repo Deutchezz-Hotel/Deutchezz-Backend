@@ -111,13 +111,20 @@ public class StaffService(
         if (await userManager.FindByEmailAsync(request.Email) is not null)
             return Error.Conflict("staff.email_in_use", "Email is already registered");
 
+        if (!PhoneNumber.TryNormalize(request.PhoneNumber, out var phone))
+            return Error.Validation("auth.invalid_phone",
+                "Enter a valid phone number, for example 0803 123 4567 or +234 803 123 4567");
+
+        if (phone is not null && await db.Users.AnyAsync(u => u.PhoneNumber == phone, cancellationToken))
+            return Error.Validation("auth.phone_in_use", "That phone number can't be used.");
+
         var user = new User
         {
             UserName = request.Email,
             Email = request.Email,
             FirstName = request.FirstName,
             LastName = request.LastName,
-            PhoneNumber = request.PhoneNumber,
+            PhoneNumber = phone,
             IsActive = true,
             EmailConfirmed = true
         };
@@ -146,7 +153,16 @@ public class StaffService(
         if (request.LastName is not null)
             user.LastName = request.LastName;
         if (request.PhoneNumber is not null)
-            user.PhoneNumber = request.PhoneNumber;
+        {
+            if (!PhoneNumber.TryNormalize(request.PhoneNumber, out var phone))
+                return Error.Validation("auth.invalid_phone",
+                    "Enter a valid phone number, for example 0803 123 4567 or +234 803 123 4567");
+
+            if (phone is not null && await db.Users.AnyAsync(u => u.PhoneNumber == phone && u.Id != id, cancellationToken))
+                return Error.Validation("auth.phone_in_use", "That phone number can't be used.");
+
+            user.PhoneNumber = phone;
+        }
 
         if (request.Role is not null)
         {

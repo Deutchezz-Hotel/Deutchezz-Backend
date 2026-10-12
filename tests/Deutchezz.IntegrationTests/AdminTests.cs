@@ -150,7 +150,7 @@ public class AdminTests(HotelWebApplicationFactory factory) : IntegrationTestBas
             email,
             password,
             role = "Receptionist",
-            phoneNumber = "08010000000"
+            phoneNumber = UniquePhone()
         });
 
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
@@ -162,5 +162,36 @@ public class AdminTests(HotelWebApplicationFactory factory) : IntegrationTestBas
         var login = await loginClient.PostAsJsonAsync("/api/v1/auth/login", new { email, password });
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
         Assert.Equal("Receptionist", (await ReadJsonAsync(login)).GetProperty("role").GetString());
+    }
+
+    [Fact]
+    public async Task Creating_staff_with_a_phone_number_already_in_use_is_rejected()
+    {
+        var admin = await LoginAsAdminAsync();
+        using var client = CreateClientWithToken(admin.AccessToken);
+        var phone = UniquePhone();
+
+        var first = await client.PostAsJsonAsync("/api/v1/admin/staff", new
+        {
+            firstName = "Recep",
+            lastName = "One",
+            email = $"staff-one-{Guid.NewGuid():N}@example.com",
+            password = "Reception-Test-123!",
+            role = "Receptionist",
+            phoneNumber = phone
+        });
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+
+        var second = await client.PostAsJsonAsync("/api/v1/admin/staff", new
+        {
+            firstName = "Recep",
+            lastName = "Two",
+            email = $"staff-two-{Guid.NewGuid():N}@example.com",
+            password = "Reception-Test-123!",
+            role = "Receptionist",
+            phoneNumber = phone
+        });
+
+        await AssertProblemAsync(second, (int)HttpStatusCode.BadRequest, "auth.phone_in_use");
     }
 }

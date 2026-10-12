@@ -1,6 +1,4 @@
 using Deutchezz.Application.Auth;
-using Deutchezz.Application.Availability;
-using Deutchezz.Application.Bookings;
 using Deutchezz.Api.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,12 +10,28 @@ namespace Deutchezz.Api.Controllers;
 [Route("api/v1/[controller]")]
 public class AuthController(IAuthService authService) : ControllerBase
 {
-    [EnableRateLimiting("auth")]
+    [EnableRateLimiting("otp")]
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
     {
         var result = await authService.RegisterAsync(request, cancellationToken);
+        return result.IsSuccess ? Accepted(result.Value) : result.Error.ToActionResult();
+    }
+
+    [EnableRateLimiting("otp")]
+    [HttpPost("verify-email")]
+    public async Task<IActionResult> VerifyEmail(VerifyEmailRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.VerifyEmailAsync(request, cancellationToken);
         return result.ToActionResult();
+    }
+
+    [EnableRateLimiting("otp")]
+    [HttpPost("resend-code")]
+    public async Task<IActionResult> ResendCode(ResendCodeRequest request, CancellationToken cancellationToken)
+    {
+        var result = await authService.ResendCodeAsync(request, cancellationToken);
+        return result.IsSuccess ? Accepted(result.Value) : result.Error.ToActionResult();
     }
 
     [EnableRateLimiting("auth")]
@@ -36,27 +50,19 @@ public class AuthController(IAuthService authService) : ControllerBase
         return result.ToActionResult();
     }
 
-    [EnableRateLimiting("auth")]
+    [EnableRateLimiting("otp")]
     [HttpPost("forgot-password")]
     public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request, CancellationToken cancellationToken)
     {
         var result = await authService.ForgotPasswordAsync(request, cancellationToken);
-        return result.ToActionResult();
+        return result.IsSuccess ? Accepted(result.Value) : result.Error.ToActionResult();
     }
 
-    [EnableRateLimiting("auth")]
+    [EnableRateLimiting("otp")]
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword(ResetPasswordRequest request, CancellationToken cancellationToken)
     {
         var result = await authService.ResetPasswordAsync(request, cancellationToken);
-        return result.ToActionResult();
-    }
-
-    [EnableRateLimiting("auth")]
-    [HttpPost("confirm-email")]
-    public async Task<IActionResult> ConfirmEmail(ConfirmEmailRequest request, CancellationToken cancellationToken)
-    {
-        var result = await authService.ConfirmEmailAsync(request, cancellationToken);
         return result.ToActionResult();
     }
 

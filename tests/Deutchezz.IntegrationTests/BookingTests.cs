@@ -178,19 +178,8 @@ public class BookingTests(HotelWebApplicationFactory factory) : IntegrationTestB
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var reference = (await ReadJsonAsync(created)).GetProperty("booking").GetProperty("bookingReference").GetString();
 
-        using var register = CreateClient();
-        var registration = await register.PostAsJsonAsync("/api/v1/auth/register", new
-        {
-            firstName = "Ada",
-            lastName = "Obi",
-            email,
-            password = "Customer-Test-123!",
-            phoneNumber = "08010000000"
-        });
-        registration.EnsureSuccessStatusCode();
-        var token = (await ReadJsonAsync(registration)).GetProperty("accessToken").GetString();
-
-        using var owner = CreateClientWithToken(token!);
+        var customer = await RegisterCustomerAsync(email: email);
+        using var owner = CreateClientWithToken(customer.AccessToken);
         Assert.Contains(reference, await ListCustomerBookingReferencesAsync(owner));
     }
 
@@ -221,7 +210,7 @@ public class BookingTests(HotelWebApplicationFactory factory) : IntegrationTestB
         var guest = body.GetProperty("items").EnumerateArray().First();
         Assert.Equal("Renamed", guest.GetProperty("firstName").GetString());
         Assert.Equal("Guest", guest.GetProperty("lastName").GetString());
-        Assert.Equal("08099999999", guest.GetProperty("phoneNumber").GetString());
+        Assert.Equal("+2348099999999", guest.GetProperty("phoneNumber").GetString());
     }
 
     private static async Task<List<string?>> ListCustomerBookingReferencesAsync(HttpClient client)

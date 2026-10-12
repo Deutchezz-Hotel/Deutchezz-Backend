@@ -1,3 +1,4 @@
+using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
 using Deutchezz.Domain.Common;
 using Microsoft.EntityFrameworkCore;
@@ -21,12 +22,24 @@ public class ProfileService(IAppDbContext db) : IProfileService
         if (user is null)
             return Error.NotFound("profile.user_not_found", "User not found");
 
+        string? normalizedPhone = null;
+        if (request.PhoneNumber is not null)
+        {
+            if (!PhoneNumber.TryNormalize(request.PhoneNumber, out normalizedPhone))
+                return Error.Validation("auth.invalid_phone",
+                    "Enter a valid phone number, for example 0803 123 4567 or +234 803 123 4567");
+
+            if (normalizedPhone is not null &&
+                await db.Users.AnyAsync(u => u.PhoneNumber == normalizedPhone && u.Id != userId, cancellationToken))
+                return Error.Validation("auth.phone_in_use", "That phone number can't be used.");
+        }
+
         if (request.FirstName is not null)
             user.FirstName = request.FirstName;
         if (request.LastName is not null)
             user.LastName = request.LastName;
         if (request.PhoneNumber is not null)
-            user.PhoneNumber = request.PhoneNumber;
+            user.PhoneNumber = normalizedPhone;
 
         // Keep linked guest rows in step so booking displays and guest lists show the
         // account's current name/phone after a profile edit.
@@ -41,7 +54,7 @@ public class ProfileService(IAppDbContext db) : IProfileService
             if (request.LastName is not null)
                 guest.LastName = request.LastName;
             if (request.PhoneNumber is not null)
-                guest.PhoneNumber = request.PhoneNumber;
+                guest.PhoneNumber = normalizedPhone;
         }
 
         await db.SaveChangesAsync(cancellationToken);

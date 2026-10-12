@@ -22,6 +22,10 @@ public class HotelWebApplicationFactory : WebApplicationFactory<Program>
     private const string TestJwtKey =
         "integration-tests-signing-key-0123456789-abcdefghijklmnopqrstuvwxyz-ABCD";
 
+    // 64 bytes, satisfies the >= 32 byte Security:OtpHmacKey validation.
+    private const string TestOtpHmacKey =
+        "integration-tests-otp-hmac-key-0123456789-abcdefghijklmnopqrstuvwxyz-ABCD";
+
     public FakeEmailSender EmailSender { get; } = new();
 
     public FakeClock Clock { get; } = new(new DateOnly(2026, 10, 10));
@@ -34,6 +38,7 @@ public class HotelWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.UseSetting("ConnectionStrings:DefaultConnection", ConnectionString);
         builder.UseSetting("Jwt:Key", TestJwtKey);
+        builder.UseSetting("Security:OtpHmacKey", TestOtpHmacKey);
 
         builder.UseSetting("Seed:AdminEmail", "admin@deutchezz.test");
         builder.UseSetting("Seed:AdminPassword", "Admin-Test-123!");
@@ -44,6 +49,7 @@ public class HotelWebApplicationFactory : WebApplicationFactory<Program>
         // Integration tests share a single loopback address, so the per-IP fixed windows from
         // production would throttle the suite. Raise them so tests exercise behaviour, not limits.
         builder.UseSetting("RateLimiting:Auth:PermitLimit", "100000");
+        builder.UseSetting("RateLimiting:Otp:PermitLimit", "100000");
         builder.UseSetting("RateLimiting:Lookup:PermitLimit", "100000");
         builder.UseSetting("RateLimiting:BookingCreate:PermitLimit", "100000");
 

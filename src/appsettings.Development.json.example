@@ -23,7 +23,6 @@
       "FromName": "Deutchezz Hotel Ispahan"
     },
     "AdminNotificationAddress": "",
-    "FrontendBaseUrl": "http://localhost:5173",
-    "RequireConfirmedEmail": false
+    "FrontendBaseUrl": "http://localhost:5173"
   }
 }

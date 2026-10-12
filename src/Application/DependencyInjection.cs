@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<IReportsService, ReportsService>();
         services.AddScoped<IActivityLogsService, ActivityLogsService>();
         services.AddHostedService<PendingBookingExpiryWorker>();
+        services.AddHostedService<PendingRegistrationCleanupWorker>();
         return services;
     }
 }

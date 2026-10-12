@@ -18,6 +18,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<Setting> Settings => Set<Setting>();
+    public DbSet<PendingRegistration> PendingRegistrations => Set<PendingRegistration>();
+    public DbSet<PasswordResetCode> PasswordResetCodes => Set<PasswordResetCode>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
