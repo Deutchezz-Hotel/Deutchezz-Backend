@@ -1,3 +1,4 @@
+using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
 using Deutchezz.Domain.Common;
@@ -5,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Deutchezz.Application.Profile;
 
-public class ProfileService(IAppDbContext db) : IProfileService
+public class ProfileService(IAppDbContext db, IActivityLogger activityLogger) : IProfileService
 {
     public async Task<Result<ProfileResponse>> GetAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -21,6 +22,10 @@ public class ProfileService(IAppDbContext db) : IProfileService
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
         if (user is null)
             return Error.NotFound("profile.user_not_found", "User not found");
+
+        // Email is read-only on the profile: changing it needs a verification flow (BR-042).
+        if (!string.IsNullOrWhiteSpace(request.Email))
+            return Error.Validation("profile.email_readonly", "Email changes aren't supported yet.");
 
         string? normalizedPhone = null;
         if (request.PhoneNumber is not null)
@@ -58,6 +63,10 @@ public class ProfileService(IAppDbContext db) : IProfileService
         }
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // The account owner is both the actor and the target of their own profile change (BR-042).
+        await activityLogger.LogAsync(userId, "profile.updated", "User", userId,
+            "Updated own profile", cancellationToken);
 
         return new ProfileResponse(user.Id, user.FirstName ?? "", user.LastName ?? "", user.Email ?? "", user.PhoneNumber);
     }

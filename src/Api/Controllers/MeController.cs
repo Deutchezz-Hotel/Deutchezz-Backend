@@ -11,13 +11,14 @@ namespace Deutchezz.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/me")]
-[Authorize(Policy = Policies.CustomerOnly)]
+[Authorize]
 public class MeController(
     IBookingService bookings,
     IProfileService profile,
     INotificationService notifications) : ControllerBase
 {
     [HttpGet("bookings")]
+    [Authorize(Policy = Policies.CustomerOnly)]
     public async Task<IActionResult> ListBookings([FromQuery] BookingSearchQuery query, CancellationToken cancellationToken)
     {
         var userId = this.GetUserId();
@@ -28,6 +29,7 @@ public class MeController(
     }
 
     [HttpGet("bookings/{id:guid}")]
+    [Authorize(Policy = Policies.CustomerOnly)]
     public async Task<IActionResult> GetBooking(Guid id, CancellationToken cancellationToken)
     {
         var userId = this.GetUserId();
@@ -38,6 +40,7 @@ public class MeController(
     }
 
     [HttpPost("bookings/{id:guid}/cancel")]
+    [Authorize(Policy = Policies.CustomerOnly)]
     public async Task<IActionResult> CancelBooking(Guid id, [FromBody] CancelBookingRequest? request, CancellationToken cancellationToken)
     {
         var userId = this.GetUserId();
@@ -68,6 +71,7 @@ public class MeController(
     }
 
     [HttpGet("notifications")]
+    [Authorize(Policy = Policies.CustomerOnly)]
     public async Task<IActionResult> ListNotifications([FromQuery] NotificationQuery query, CancellationToken cancellationToken)
     {
         var userId = this.GetUserId();
@@ -78,6 +82,7 @@ public class MeController(
     }
 
     [HttpGet("notifications/unread-count")]
+    [Authorize(Policy = Policies.CustomerOnly)]
     public async Task<IActionResult> UnreadCount(CancellationToken cancellationToken)
     {
         var userId = this.GetUserId();
@@ -88,6 +93,7 @@ public class MeController(
     }
 
     [HttpPost("notifications/{id:guid}/read")]
+    [Authorize(Policy = Policies.CustomerOnly)]
     public async Task<IActionResult> MarkNotificationRead(Guid id, CancellationToken cancellationToken)
     {
         var userId = this.GetUserId();

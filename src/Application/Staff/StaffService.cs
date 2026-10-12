@@ -18,8 +18,6 @@ public record CreateStaffRequest(
     string Role,
     string? PhoneNumber);
 
-public record UpdateStaffRequest(string? FirstName, string? LastName, string? PhoneNumber, string? Role);
-
 public record SetStaffStatusRequest(bool IsActive);
 
 public record StaffResponse(
@@ -42,9 +40,7 @@ public class StaffQuery : QueryParameters
 public interface IStaffService
 {
     Task<Result<PaginatedResult<StaffResponse>>> ListAsync(StaffQuery query, CancellationToken cancellationToken);
-    Task<Result<StaffResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<Result<StaffResponse>> CreateAsync(CreateStaffRequest request, Guid adminUserId, CancellationToken cancellationToken);
-    Task<Result<StaffResponse>> UpdateAsync(Guid id, UpdateStaffRequest request, Guid adminUserId, CancellationToken cancellationToken);
     Task<Result> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken);
 }
 
@@ -104,15 +100,6 @@ public class StaffService(
         return new PaginatedResult<StaffResponse>(items, total, query.Page, query.PageSize);
     }
 
-    public async Task<Result<StaffResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken)
-    {
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
-        if (user is null)
-            return Error.NotFound("staff.not_found", "Staff member not found");
-
-        return await ToResponseAsync(user, cancellationToken).ConfigureAwait(false);
-    }
-
     public async Task<Result<StaffResponse>> CreateAsync(CreateStaffRequest request, Guid adminUserId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
@@ -154,50 +141,6 @@ public class StaffService(
 
         await activityLogger.LogAsync(adminUserId, "staff.created", "User", user.Id,
             $"Created staff {request.Email} with role {role}", cancellationToken);
-
-        return await ToResponseAsync(user, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task<Result<StaffResponse>> UpdateAsync(Guid id, UpdateStaffRequest request, Guid adminUserId, CancellationToken cancellationToken)
-    {
-        var user = await userManager.FindByIdAsync(id.ToString());
-        if (user is null)
-            return Error.NotFound("staff.not_found", "Staff member not found");
-
-        if (request.FirstName is not null)
-            user.FirstName = request.FirstName;
-        if (request.LastName is not null)
-            user.LastName = request.LastName;
-        if (request.PhoneNumber is not null)
-        {
-            if (!PhoneNumber.TryNormalize(request.PhoneNumber, out var phone))
-                return Error.Validation("auth.invalid_phone",
-                    "Enter a valid phone number, for example 0803 123 4567 or +234 803 123 4567");
-
-            if (phone is not null && await db.Users.AnyAsync(u => u.PhoneNumber == phone && u.Id != id, cancellationToken))
-                return Error.Validation("auth.phone_in_use", "That phone number can't be used.");
-
-            user.PhoneNumber = phone;
-        }
-
-        if (request.Role is not null)
-        {
-            if (!AllowedRoles.Contains(request.Role, StringComparer.OrdinalIgnoreCase))
-                return Error.Validation("staff.invalid_role", "Role must be Receptionist or Administrator");
-
-            var currentRoles = await userManager.GetRolesAsync(user);
-            if (currentRoles.Count > 0)
-                await userManager.RemoveFromRolesAsync(user, currentRoles);
-
-            var role = request.Role[..1].ToUpperInvariant() + request.Role[1..].ToLowerInvariant();
-            await userManager.AddToRoleAsync(user, role);
-        }
-
-        var update = await userManager.UpdateAsync(user);
-        if (!update.Succeeded)
-            return Error.Validation("staff.update_failed", string.Join(", ", update.Errors.Select(e => e.Description)));
-
-        await activityLogger.LogAsync(adminUserId, "staff.updated", "User", user.Id, "Updated staff", cancellationToken);
 
         return await ToResponseAsync(user, cancellationToken).ConfigureAwait(false);
     }

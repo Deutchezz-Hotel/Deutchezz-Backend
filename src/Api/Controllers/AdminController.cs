@@ -173,13 +173,6 @@ public class AdminController(
         return result.ToActionResult();
     }
 
-    [HttpGet("staff/{id:guid}")]
-    public async Task<IActionResult> GetStaff(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await staff.GetByIdAsync(id, cancellationToken);
-        return result.ToActionResult();
-    }
-
     [HttpPost("staff")]
     public async Task<IActionResult> CreateStaff([FromBody] CreateStaffRequest request, CancellationToken cancellationToken)
     {
@@ -189,16 +182,6 @@ public class AdminController(
         var result = await staff.CreateAsync(request, userId.Value, cancellationToken);
         if (result.IsFailure) return result.ToActionResult();
         return StatusCode(StatusCodes.Status201Created, result.Value);
-    }
-
-    [HttpPut("staff/{id:guid}")]
-    public async Task<IActionResult> UpdateStaff(Guid id, [FromBody] UpdateStaffRequest request, CancellationToken cancellationToken)
-    {
-        var userId = this.GetUserId();
-        if (userId is null) return Error.Unauthorized("auth.required", "Authentication is required to access this resource.").ToActionResult();
-
-        var result = await staff.UpdateAsync(id, request, userId.Value, cancellationToken);
-        return result.ToActionResult();
     }
 
     [HttpPatch("staff/{id:guid}/status")]
