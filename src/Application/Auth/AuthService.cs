@@ -49,6 +49,8 @@ public class AuthService(
 
         await userManager.AddToRoleAsync(user, nameof(UserRole.Customer));
 
+        await LinkExistingGuestDataAsync(user, cancellationToken);
+
         await activityLogger.LogAsync(user.Id, "user.registered", "User", user.Id,
             $"Registered {request.Email}", cancellationToken);
 
@@ -182,6 +184,43 @@ public class AuthService(
 
         await activityLogger.LogAsync(user.Id, "user.email_confirmed", "User", user.Id, null, cancellationToken);
         return new MessageResponse("Your email address has been confirmed.");
+    }
+
+    private async Task LinkExistingGuestDataAsync(User user, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(user.Email))
+            return;
+
+        var normalizedEmail = user.Email.Trim().ToLowerInvariant();
+
+        // A visitor may book anonymously before registering. Adopt those guest rows so the
+        // new account immediately sees the bookings in its dashboard, and re-point any
+        // notifications that were stored against the guest without a user id.
+        var orphans = await db.Guests
+            .Where(g => g.UserId == null && g.Email.Trim().ToLower() == normalizedEmail)
+            .ToListAsync(cancellationToken);
+
+        if (orphans.Count == 0)
+            return;
+
+        var guestIds = orphans.Select(g => g.Id).ToList();
+
+        foreach (var orphan in orphans)
+        {
+            orphan.UserId = user.Id;
+            if (!string.IsNullOrWhiteSpace(user.FirstName)) orphan.FirstName = user.FirstName;
+            if (!string.IsNullOrWhiteSpace(user.LastName)) orphan.LastName = user.LastName;
+            if (!string.IsNullOrWhiteSpace(user.PhoneNumber)) orphan.PhoneNumber = user.PhoneNumber;
+        }
+
+        var notifications = await db.Notifications
+            .Where(n => n.UserId == null && n.GuestId != null && guestIds.Contains(n.GuestId.Value))
+            .ToListAsync(cancellationToken);
+
+        foreach (var notification in notifications)
+            notification.UserId = user.Id;
+
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task SendVerificationEmailAsync(User user, CancellationToken cancellationToken)

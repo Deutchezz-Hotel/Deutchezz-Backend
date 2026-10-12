@@ -28,6 +28,22 @@ public class ProfileService(IAppDbContext db) : IProfileService
         if (request.PhoneNumber is not null)
             user.PhoneNumber = request.PhoneNumber;
 
+        // Keep linked guest rows in step so booking displays and guest lists show the
+        // account's current name/phone after a profile edit.
+        var linkedGuests = await db.Guests
+            .Where(g => g.UserId == userId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var guest in linkedGuests)
+        {
+            if (request.FirstName is not null)
+                guest.FirstName = request.FirstName;
+            if (request.LastName is not null)
+                guest.LastName = request.LastName;
+            if (request.PhoneNumber is not null)
+                guest.PhoneNumber = request.PhoneNumber;
+        }
+
         await db.SaveChangesAsync(cancellationToken);
 
         return new ProfileResponse(user.Id, user.FirstName ?? "", user.LastName ?? "", user.Email ?? "", user.PhoneNumber);

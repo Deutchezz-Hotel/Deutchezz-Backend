@@ -51,6 +51,17 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
         return ToResponse(roomType);
     }
 
+    public async Task<Result<RoomTypeResponse>> GetByIdForAdminAsync(Guid id, CancellationToken cancellationToken)
+    {
+        // Admins must be able to load (and therefore edit) inactive types too; the public
+        // GetByIdAsync deliberately hides them.
+        var roomType = await db.RoomTypes.FirstOrDefaultAsync(rt => rt.Id == id, cancellationToken);
+        if (roomType is null)
+            return Error.NotFound("roomtype.not_found", "Room type not found");
+
+        return ToResponse(roomType);
+    }
+
     public async Task<Result<RoomTypeResponse>> CreateAsync(CreateRoomTypeRequest request, Guid adminUserId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Name))

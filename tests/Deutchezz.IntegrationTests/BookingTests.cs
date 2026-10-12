@@ -165,6 +165,65 @@ public class BookingTests(HotelWebApplicationFactory factory) : IntegrationTestB
         Assert.Contains(reference, await ListCustomerBookingReferencesAsync(owner));
     }
 
+    [Fact]
+    public async Task Registering_with_prior_anonymous_booking_email_links_it()
+    {
+        // A visitor books anonymously, then registers with the same email: the booking must
+        // be adopted into the new account without any further action.
+        var email = $"prior-{Guid.NewGuid():N}@example.com";
+
+        using var anonymous = CreateClient();
+        var roomTypeId = await GetRoomTypeIdAsync(anonymous, "Standard");
+        var created = await SendCreateAsync(anonymous, NewKey(), BuildRequest(roomTypeId, guestEmail: email));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var reference = (await ReadJsonAsync(created)).GetProperty("booking").GetProperty("bookingReference").GetString();
+
+        using var register = CreateClient();
+        var registration = await register.PostAsJsonAsync("/api/v1/auth/register", new
+        {
+            firstName = "Ada",
+            lastName = "Obi",
+            email,
+            password = "Customer-Test-123!",
+            phoneNumber = "08010000000"
+        });
+        registration.EnsureSuccessStatusCode();
+        var token = (await ReadJsonAsync(registration)).GetProperty("accessToken").GetString();
+
+        using var owner = CreateClientWithToken(token!);
+        Assert.Contains(reference, await ListCustomerBookingReferencesAsync(owner));
+    }
+
+    [Fact]
+    public async Task Profile_update_syncs_linked_guest_name()
+    {
+        var customer = await RegisterCustomerAsync();
+
+        using var owner = CreateClientWithToken(customer.AccessToken);
+        var roomTypeId = await GetRoomTypeIdAsync(owner, "Standard");
+        var created = await SendCreateAsync(owner, NewKey(), BuildRequest(roomTypeId, guestEmail: customer.Email));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var update = await owner.PutAsJsonAsync("/api/v1/me/profile", new
+        {
+            firstName = "Renamed",
+            lastName = "Guest",
+            phoneNumber = "08099999999"
+        });
+        update.EnsureSuccessStatusCode();
+
+        var admin = await LoginAsAdminAsync();
+        using var adminClient = CreateClientWithToken(admin.AccessToken);
+        var response = await adminClient.GetAsync($"/api/v1/admin/guests?search={Uri.EscapeDataString(customer.Email)}&pageSize=10");
+        response.EnsureSuccessStatusCode();
+
+        var body = await ReadJsonAsync(response);
+        var guest = body.GetProperty("items").EnumerateArray().First();
+        Assert.Equal("Renamed", guest.GetProperty("firstName").GetString());
+        Assert.Equal("Guest", guest.GetProperty("lastName").GetString());
+        Assert.Equal("08099999999", guest.GetProperty("phoneNumber").GetString());
+    }
+
     private static async Task<List<string?>> ListCustomerBookingReferencesAsync(HttpClient client)
     {
         var response = await client.GetAsync("/api/v1/me/bookings?pageSize=100");

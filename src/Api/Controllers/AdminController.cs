@@ -90,7 +90,7 @@ public class AdminController(
     [HttpGet("room-types/{id:guid}")]
     public async Task<IActionResult> GetRoomType(Guid id, CancellationToken cancellationToken)
     {
-        var result = await roomTypes.GetByIdAsync(id, cancellationToken);
+        var result = await roomTypes.GetByIdForAdminAsync(id, cancellationToken);
         return result.ToActionResult();
     }
 
