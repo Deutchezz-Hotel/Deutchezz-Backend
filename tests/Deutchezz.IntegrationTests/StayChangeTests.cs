@@ -387,9 +387,17 @@ public class StayChangeTests(HotelWebApplicationFactory factory) : IntegrationTe
         var checkIn = Clock.Today.AddDays(300);
         var checkOut = checkIn.AddDays(2);
 
-        // 8 Standard bookings (Standard capacity is 8); Deluxe capacity is 7.
+        var freeStandard = await FreeRoomIdsAsync(staff, standardId, checkIn, checkOut);
+        var freeDeluxe = await FreeRoomIdsAsync(staff, deluxeId, checkIn, checkOut);
+        Assert.NotEmpty(freeStandard);
+        Assert.NotEmpty(freeDeluxe);
+
+        var requestCount = Math.Min(freeStandard.Count, freeDeluxe.Count + 1);
+        var expectedSucceeded = Math.Min(requestCount, freeDeluxe.Count);
+
+        // Fill Standard up to the number of concurrent requests.
         var bookings = new List<(Guid BookingId, Guid LineId)>();
-        for (var i = 0; i < 8; i++)
+        for (var i = 0; i < requestCount; i++)
         {
             var b = await CreateWalkInAsync(staff, standardId, checkIn, checkOut, quantity: 1);
             bookings.Add((b.GetProperty("id").GetGuid(), FirstLineId(b)));
@@ -400,7 +408,7 @@ public class StayChangeTests(HotelWebApplicationFactory factory) : IntegrationTe
                 new { bookingRoomTypeId = b.LineId, newRoomTypeId = deluxeId, quantity = 1 })));
 
         var succeeded = responses.Count(r => r.StatusCode == HttpStatusCode.OK);
-        Assert.Equal(7, succeeded);
+        Assert.Equal(expectedSucceeded, succeeded);
 
         var bookingIds = bookings.Select(b => b.BookingId).ToList();
         using var scope = Factory.Services.CreateScope();
@@ -408,7 +416,7 @@ public class StayChangeTests(HotelWebApplicationFactory factory) : IntegrationTe
         var deluxeQuantity = await db.BookingRoomTypes
             .Where(l => l.RoomTypeId == deluxeId && bookingIds.Contains(l.BookingId))
             .SumAsync(l => (int?)l.Quantity) ?? 0;
-        Assert.Equal(7, deluxeQuantity);
+        Assert.Equal(expectedSucceeded, deluxeQuantity);
     }
 
     // ===================== Reassign / unassign (7j) =====================
