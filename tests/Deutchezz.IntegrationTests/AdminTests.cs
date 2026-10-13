@@ -194,4 +194,60 @@ public class AdminTests(HotelWebApplicationFactory factory) : IntegrationTestBas
 
         await AssertProblemAsync(second, (int)HttpStatusCode.BadRequest, "auth.phone_in_use");
     }
+
+    [Fact]
+    public async Task Toggling_a_room_type_status_returns_the_updated_entity()
+    {
+        var admin = await LoginAsAdminAsync();
+        using var client = CreateClientWithToken(admin.AccessToken);
+
+        var create = await client.PostAsJsonAsync("/api/v1/admin/room-types", new
+        {
+            name = $"Status Type {Guid.NewGuid():N}",
+            description = (string?)null,
+            basePrice = 25000m,
+            maximumOccupancy = 2,
+            bedType = "Queen"
+        });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var id = (await ReadJsonAsync(create)).GetProperty("id").GetGuid();
+
+        // Regression for issue 1: the toggle used to return 204, so the client tried to parse an
+        // empty body and surfaced a TypeError instead of the refreshed entity.
+        var deactivate = await client.PatchAsJsonAsync(
+            $"/api/v1/admin/room-types/{id}/status", new { isActive = false });
+
+        Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+        var body = await ReadJsonAsync(deactivate);
+        Assert.Equal(id, body.GetProperty("id").GetGuid());
+        Assert.False(body.GetProperty("isActive").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Toggling_a_staff_status_returns_the_updated_entity()
+    {
+        var admin = await LoginAsAdminAsync();
+        using var client = CreateClientWithToken(admin.AccessToken);
+
+        var create = await client.PostAsJsonAsync("/api/v1/admin/staff", new
+        {
+            firstName = "Status",
+            lastName = "Toggle",
+            email = $"status-toggle-{Guid.NewGuid():N}@example.com",
+            password = "Reception-Test-123!",
+            role = "Receptionist",
+            phoneNumber = UniquePhone()
+        });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var id = (await ReadJsonAsync(create)).GetProperty("id").GetGuid();
+
+        // Regression for issue 2: same 204-vs-body contract mismatch as the room-type toggle.
+        var deactivate = await client.PatchAsJsonAsync(
+            $"/api/v1/admin/staff/{id}/status", new { isActive = false });
+
+        Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+        var body = await ReadJsonAsync(deactivate);
+        Assert.Equal(id, body.GetProperty("id").GetGuid());
+        Assert.False(body.GetProperty("isActive").GetBoolean());
+    }
 }

@@ -154,7 +154,7 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
         return ToResponse(roomType);
     }
 
-    public async Task<Result> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken)
+    public async Task<Result<RoomTypeResponse>> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken)
     {
         var roomType = await db.RoomTypes.FirstOrDefaultAsync(rt => rt.Id == id, cancellationToken);
         if (roomType is null)
@@ -182,7 +182,9 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
         await activityLogger.LogAsync(adminUserId, "roomtype.status_changed", "RoomType", roomType.Id,
             $"Set active = {isActive}", cancellationToken);
 
-        return Result.Success();
+        // Return the updated representation so the client can trust the server state (and never
+        // has to map an empty 204 body, which previously surfaced as a bogus "Network error").
+        return ToResponse(roomType);
     }
 
     private static Error? ValidateImageUrls(List<string>? imageUrls)

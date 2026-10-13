@@ -76,6 +76,24 @@ public sealed class JobsOptions
     public int VerificationCleanupIntervalMinutes { get; set; } = 60;
 }
 
+/// <summary>
+/// How long cancelled bookings are retained before they are permanently removed (SoT 7n / BR-042).
+/// Retention is measured from <c>CancelledAt</c>.
+/// </summary>
+public sealed class BookingRetentionOptions
+{
+    public const string SectionName = "BookingRetention";
+
+    /// <summary>Master switch for the hourly purge.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>How long a cancelled booking is retained before it is purged.</summary>
+    public int CancelledDays { get; set; } = 30;
+
+    /// <summary>How often the purge cycle runs.</summary>
+    public int IntervalMinutes { get; set; } = 60;
+}
+
 public sealed class AuthOptions
 {
     public const string SectionName = "Auth";

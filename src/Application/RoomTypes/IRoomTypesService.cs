@@ -10,5 +10,5 @@ public interface IRoomTypesService
     Task<Result<RoomTypeResponse>> GetByIdForAdminAsync(Guid id, CancellationToken cancellationToken);
     Task<Result<RoomTypeResponse>> CreateAsync(CreateRoomTypeRequest request, Guid adminUserId, CancellationToken cancellationToken);
     Task<Result<RoomTypeResponse>> UpdateAsync(Guid id, UpdateRoomTypeRequest request, Guid adminUserId, CancellationToken cancellationToken);
-    Task<Result> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken);
+    Task<Result<RoomTypeResponse>> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken);
 }

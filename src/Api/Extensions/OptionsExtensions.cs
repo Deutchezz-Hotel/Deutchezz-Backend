@@ -63,6 +63,14 @@ public static class OptionsExtensions
                 "Jobs:VerificationCleanupIntervalMinutes must be greater than 0.")
             .ValidateOnStart();
 
+        services.AddOptions<BookingRetentionOptions>()
+            .Bind(configuration.GetSection(BookingRetentionOptions.SectionName))
+            .Validate(o => o.CancelledDays >= 0,
+                "BookingRetention:CancelledDays must not be negative.")
+            .Validate(o => o.IntervalMinutes > 0,
+                "BookingRetention:IntervalMinutes must be greater than 0.")
+            .ValidateOnStart();
+
         services.AddOptions<AuthOptions>()
             .Bind(configuration.GetSection(AuthOptions.SectionName))
             .Validate(o => o.CodeMinutes > 0, "Auth:CodeMinutes must be greater than 0.")
@@ -142,6 +150,7 @@ public static class OptionsExtensions
         _ = services.GetRequiredService<IOptions<RateLimitingOptions>>().Value;
         _ = services.GetRequiredService<IOptions<EmailOptions>>().Value;
         _ = services.GetRequiredService<IOptions<JobsOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<BookingRetentionOptions>>().Value;
         _ = services.GetRequiredService<IOptions<AuthOptions>>().Value;
         _ = services.GetRequiredService<IOptions<SecurityOptions>>().Value;
     }

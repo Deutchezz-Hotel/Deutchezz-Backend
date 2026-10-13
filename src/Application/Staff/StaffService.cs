@@ -41,7 +41,7 @@ public interface IStaffService
 {
     Task<Result<PaginatedResult<StaffResponse>>> ListAsync(StaffQuery query, CancellationToken cancellationToken);
     Task<Result<StaffResponse>> CreateAsync(CreateStaffRequest request, Guid adminUserId, CancellationToken cancellationToken);
-    Task<Result> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken);
+    Task<Result<StaffResponse>> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken);
 }
 
 public class StaffService(
@@ -145,7 +145,7 @@ public class StaffService(
         return await ToResponseAsync(user, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<Result> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken)
+    public async Task<Result<StaffResponse>> SetActiveAsync(Guid id, bool isActive, Guid adminUserId, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByIdAsync(id.ToString());
         if (user is null)
@@ -168,7 +168,9 @@ public class StaffService(
         await activityLogger.LogAsync(adminUserId, "staff.status_changed", "User", user.Id,
             isActive ? "Staff activated" : "Staff deactivated", cancellationToken);
 
-        return Result.Success();
+        // Return the updated member instead of an empty 204 body: the client maps this response,
+        // and a 204 previously looked like a failed (network) request.
+        return await ToResponseAsync(user, cancellationToken);
     }
 
     private async Task<StaffResponse> ToResponseAsync(User user, CancellationToken cancellationToken)
