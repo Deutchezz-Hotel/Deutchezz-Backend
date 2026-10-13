@@ -6,7 +6,9 @@ public sealed record StaffNewBookingAlertModel(
     string GuestEmail,
     string GuestPhone,
     DateOnly CheckInDate,
+    TimeOnly CheckInTime,
     DateOnly CheckOutDate,
+    TimeOnly CheckOutTime,
     int Nights,
     IReadOnlyList<BookingConfirmationRoom> Rooms,
     decimal TotalAmount);
@@ -29,8 +31,8 @@ public static class StaffNewBookingAlertEmail
             <p style="margin:0 0 6px;"><strong>Guest:</strong> {System.Net.WebUtility.HtmlEncode(model.GuestName)}</p>
             <p style="margin:0 0 6px;"><strong>Email:</strong> {System.Net.WebUtility.HtmlEncode(model.GuestEmail)}</p>
             <p style="margin:0 0 6px;"><strong>Phone:</strong> {System.Net.WebUtility.HtmlEncode(model.GuestPhone)}</p>
-            <p style="margin:0 0 6px;"><strong>Check-in:</strong> {model.CheckInDate:yyyy-MM-dd}</p>
-            <p style="margin:0 0 6px;"><strong>Check-out:</strong> {model.CheckOutDate:yyyy-MM-dd} ({model.Nights} night(s))</p>
+            <p style="margin:0 0 6px;">{Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-in", model.CheckInDate, model.CheckInTime, true)}</p>
+            <p style="margin:0 0 6px;">{Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-out", model.CheckOutDate, model.CheckOutTime, false)} ({model.Nights} night(s))</p>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:16px 0;">
               {EmailLayout.RoomLines(model.Rooms, showRate: false)}
               {EmailLayout.TotalRow("Total", model.TotalAmount)}
@@ -40,8 +42,8 @@ public static class StaffNewBookingAlertEmail
         var text = EmailLayout.PlainText("New booking received",
             $"Booking reference: {model.BookingReference}",
             $"Guest: {model.GuestName} <{model.GuestEmail}> {model.GuestPhone}",
-            $"Check-in: {model.CheckInDate:yyyy-MM-dd}",
-            $"Check-out: {model.CheckOutDate:yyyy-MM-dd}",
+            Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-in", model.CheckInDate, model.CheckInTime, true),
+            Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-out", model.CheckOutDate, model.CheckOutTime, false),
             $"Nights: {model.Nights}",
             $"Rooms: {string.Join(", ", model.Rooms.Select(r => $"{r.RoomTypeName} x{r.Quantity}"))}",
             $"Total: NGN {model.TotalAmount:N2}");

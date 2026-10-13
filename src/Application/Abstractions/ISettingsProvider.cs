@@ -14,4 +14,15 @@ public interface ISettingsProvider
     bool RequirePaymentBeforeCheckOut { get; }
     bool EarlyCheckOutRequiresAdmin { get; }
     int DuplicateWarningMinutes { get; }
+
+    // v1.12 stay policy.
+    TimeOnly DefaultCheckInTime { get; }
+    TimeOnly DefaultCheckOutTime { get; }
+    int TimeSlotMinutes { get; }
+    TimeOnly EarliestCheckInTime { get; }
+    TimeOnly LatestCheckInTime { get; }
+    TimeOnly EarliestCheckOutTime { get; }
+    TimeOnly LatestCheckOutTime { get; }
+    int MaxExtraHoursPerStay { get; }
+    int TurnaroundMinutes { get; }
 }

@@ -55,6 +55,17 @@ public sealed class SettingsOptions
     public bool RequireFullPaymentAtCheckIn { get; set; }
     public bool RequirePaymentBeforeCheckOut { get; set; }
     public bool EarlyCheckOutRequiresAdmin { get; set; }
+
+    // v1.12 stay policy (time-aware stays).
+    public string DefaultCheckInTime { get; set; } = "14:00";
+    public string DefaultCheckOutTime { get; set; } = "12:00";
+    public int TimeSlotMinutes { get; set; } = 30;
+    public string EarliestCheckInTime { get; set; } = "00:00";
+    public string LatestCheckInTime { get; set; } = "23:30";
+    public string EarliestCheckOutTime { get; set; } = "00:00";
+    public string LatestCheckOutTime { get; set; } = "23:30";
+    public int MaxExtraHoursPerStay { get; set; } = 6;
+    public int TurnaroundMinutes { get; set; }
 }
 
 public sealed class JobsOptions

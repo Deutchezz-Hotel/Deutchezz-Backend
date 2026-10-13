@@ -11,6 +11,7 @@ using Deutchezz.Application.Rooms;
 using Deutchezz.Application.RoomTypes;
 using Deutchezz.Application.Settings;
 using Deutchezz.Application.Staff;
+using Deutchezz.Application.Stays;
 using Deutchezz.Application.Users;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -35,6 +36,8 @@ public static class DependencyInjection
         services.AddScoped<IAdminSettingsService, AdminSettingsService>();
         services.AddScoped<IReportsService, ReportsService>();
         services.AddScoped<IActivityLogsService, ActivityLogsService>();
+        services.AddScoped<IStayPolicyService, StayPolicyService>();
+        services.AddScoped<IStayConflictService, StayConflictService>();
         services.AddHostedService<PendingBookingExpiryWorker>();
         services.AddHostedService<PendingRegistrationCleanupWorker>();
         return services;

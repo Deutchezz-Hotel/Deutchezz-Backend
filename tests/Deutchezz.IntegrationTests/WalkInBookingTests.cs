@@ -244,7 +244,7 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
         var lineId = booking.GetProperty("lines").EnumerateArray().First().GetProperty("id").GetGuid();
         var (roomId, _) = await FindAvailableRoomAsync(staff, roomTypeId, Clock.Today);
         (await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{bookingId}/assign-rooms",
-            new { assignments = new[] { new { bookingRoomTypeId = lineId, roomId } } })).EnsureSuccessStatusCode();
+            new { assignments = new[] { new { bookingRoomTypeId = lineId, roomId } }, acknowledgeLateAvailability = true })).EnsureSuccessStatusCode();
         (await staff.PostAsync($"/api/v1/reception/bookings/{bookingId}/check-in", content: null)).EnsureSuccessStatusCode();
 
         var cancelCheckedIn = await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{bookingId}/cancel",
@@ -284,7 +284,7 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
 
         var (roomId, _) = await FindAvailableRoomAsync(staff, roomTypeId, checkIn);
         (await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{firstId}/assign-rooms",
-            new { assignments = new[] { new { bookingRoomTypeId = firstLine, roomId } } })).EnsureSuccessStatusCode();
+            new { assignments = new[] { new { bookingRoomTypeId = firstLine, roomId } }, acknowledgeLateAvailability = true })).EnsureSuccessStatusCode();
 
         var second = await CreateWalkInAsync(staff, roomTypeId, checkIn: checkIn, phone: UniquePhone());
         var secondId = second.GetProperty("id").GetGuid();
@@ -293,7 +293,7 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
         // The same physical room cannot be assigned to two overlapping live bookings.
         var conflict = await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{secondId}/assign-rooms",
             new { assignments = new[] { new { bookingRoomTypeId = secondLine, roomId } } });
-        await AssertProblemAsync(conflict, (int)HttpStatusCode.Conflict, "booking.room_unavailable");
+        await AssertProblemAsync(conflict, (int)HttpStatusCode.Conflict, "room.occupied_until");
 
         // Cancelling the first releases its assignment…
         (await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{firstId}/cancel",
@@ -301,7 +301,7 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
 
         // …so the room can now be assigned to the second booking.
         var retry = await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{secondId}/assign-rooms",
-            new { assignments = new[] { new { bookingRoomTypeId = secondLine, roomId } } });
+            new { assignments = new[] { new { bookingRoomTypeId = secondLine, roomId } }, acknowledgeLateAvailability = true });
         Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
     }
 
@@ -379,8 +379,9 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
         {
             var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
             var entity = await db.Bookings.FirstAsync(b => b.Id == bookingId);
-            entity.CheckInDate = entity.CheckInDate.AddDays(-1);
-            entity.CheckOutDate = entity.CheckOutDate.AddDays(-1);
+            var offset = Clock.ConvertFromUtc(Clock.UtcNow).Offset;
+            entity.SetStay(entity.CheckInDate.AddDays(-1), new TimeOnly(14, 0),
+                entity.CheckOutDate.AddDays(-1), new TimeOnly(12, 0), offset);
             await db.SaveChangesAsync(default);
         }
 
@@ -517,7 +518,7 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
         HttpClient staff, Guid roomTypeId, DateOnly date)
     {
         var response = await staff.GetAsync(
-            $"/api/v1/reception/rooms?roomTypeId={roomTypeId}&date={date:yyyy-MM-dd}&pageSize=100");
+            $"/api/v1/reception/rooms?roomTypeId={roomTypeId}&availableFrom={date:yyyy-MM-dd}&availableTo={date.AddDays(2):yyyy-MM-dd}&pageSize=100");
         response.EnsureSuccessStatusCode();
 
         foreach (var item in (await ReadJsonAsync(response)).GetProperty("items").EnumerateArray())

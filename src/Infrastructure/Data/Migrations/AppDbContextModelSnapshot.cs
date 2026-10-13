@@ -60,6 +60,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("ActualCheckInAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("ActualCheckOutAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -77,8 +80,14 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime>("CheckInAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateOnly>("CheckInDate")
                         .HasColumnType("date");
+
+                    b.Property<DateTime>("CheckOutAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateOnly>("CheckOutDate")
                         .HasColumnType("date");
@@ -147,7 +156,7 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.HasIndex("IdempotencyKey")
                         .IsUnique();
 
-                    b.HasIndex("CheckInDate", "CheckOutDate", "Status");
+                    b.HasIndex("CheckInAt", "CheckOutAt", "Status");
 
                     b.ToTable("Bookings", (string)null);
                 });

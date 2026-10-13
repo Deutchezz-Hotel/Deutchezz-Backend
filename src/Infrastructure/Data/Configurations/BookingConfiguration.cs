@@ -19,6 +19,6 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasIndex(b => b.IdempotencyKey).IsUnique();
         builder.Property(b => b.IdempotencyRequestHash).HasMaxLength(64);
         builder.Property(b => b.ConcurrencyToken).IsConcurrencyToken();
-        builder.HasIndex(b => new { b.CheckInDate, b.CheckOutDate, b.Status });
+        builder.HasIndex(b => new { b.CheckInAt, b.CheckOutAt, b.Status });
     }
 }

@@ -2,71 +2,95 @@ using System.Linq.Expressions;
 using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
+using Deutchezz.Application.Stays;
 using Deutchezz.Domain.Common;
 using Deutchezz.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Deutchezz.Application.Rooms;
 
-public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IRoomsService
+public class RoomsService(
+    IAppDbContext db,
+    IActivityLogger activityLogger,
+    IBusinessClock businessClock,
+    IStayPolicyService stays) : IRoomsService
 {
     public async Task<Result<PaginatedResult<RoomListItemResponse>>> ListAsync(RoomQuery query, CancellationToken cancellationToken)
     {
+        var localNow = businessClock.ConvertFromUtc(businessClock.UtcNow);
+        var lagosOffset = localNow.Offset;
+        var nowUtc = DateTime.SpecifyKind(businessClock.UtcNow.UtcDateTime, DateTimeKind.Utc);
+
+        var policy = await stays.GetPolicyAsync(cancellationToken);
+        var turnaround = policy.TurnaroundMinutes;
+
+        // The board instant: explicit "at", else legacy "date" at the current Lagos time, else now.
+        var atUtc = query.At is DateTime at
+            ? LocalToUtc(at, lagosOffset)
+            : query.Date is DateOnly date
+                ? LocalToUtc(date.ToDateTime(TimeOnly.FromTimeSpan(localNow.TimeOfDay)), lagosOffset)
+                : nowUtc;
+
+        // The free range: new freeFrom/freeTo, else legacy availableFrom/availableTo with policy times.
+        DateTime? freeFromUtc = null;
+        DateTime? freeToUtc = null;
+        if (query.FreeFrom is not null || query.FreeTo is not null)
+        {
+            if (query.FreeFrom is null || query.FreeTo is null)
+                return Error.Validation("room.invalid_availability_range",
+                    "freeFrom and freeTo must both be provided");
+            freeFromUtc = LocalToUtc(query.FreeFrom.Value, lagosOffset);
+            freeToUtc = LocalToUtc(query.FreeTo.Value, lagosOffset);
+        }
+        else if (query.AvailableFrom is not null || query.AvailableTo is not null)
+        {
+            if (query.AvailableFrom is null || query.AvailableTo is null)
+                return Error.Validation("room.invalid_availability_range",
+                    "availableFrom and availableTo must both be provided and availableFrom must be before availableTo");
+            freeFromUtc = LocalToUtc(query.AvailableFrom.Value.ToDateTime(policy.DefaultCheckInTime), lagosOffset);
+            freeToUtc = LocalToUtc(query.AvailableTo.Value.ToDateTime(policy.DefaultCheckOutTime), lagosOffset);
+        }
+
+        if (freeFromUtc is not null && freeToUtc is not null && freeFromUtc >= freeToUtc)
+            return Error.Validation("room.invalid_availability_range", "freeFrom must be before freeTo");
+
+        // Every live assignment against a counted booking, in one round-trip.
+        var occupancy = await db.RoomAssignments
+            .Where(ra => ra.ReleasedAt == null)
+            .Join(db.Bookings.Where(b =>
+                    b.Status == BookingStatus.Pending
+                    || b.Status == BookingStatus.Confirmed
+                    || b.Status == BookingStatus.CheckedIn),
+                ra => ra.BookingId, b => b.Id,
+                (ra, b) => new OccupancyRow(
+                    ra.RoomId, b.Id, b.BookingReference, b.Status, b.CheckInAt, b.CheckOutAt, b.ActualCheckOutAt,
+                    b.Guest != null ? b.Guest.FirstName : null,
+                    b.Guest != null ? b.Guest.LastName : null))
+            .ToListAsync(cancellationToken);
+
+        var occupantAt = BuildOccupantMap(occupancy, atUtc, nowUtc, turnaround);
+        var nextArrival = BuildNextArrivalMap(occupancy, atUtc);
+        var busyRoomIds = freeFromUtc is not null && freeToUtc is not null
+            ? BuildBusyRooms(occupancy, freeFromUtc.Value, freeToUtc.Value, nowUtc, turnaround)
+            : null;
+
         var q = db.Rooms.AsQueryable();
 
         if (query.RoomTypeId is not null)
             q = q.Where(r => r.RoomTypeId == query.RoomTypeId);
 
-        // Stay-availability range: both ends required, half-open [availableFrom, availableTo).
-        // Only active, usable rooms with no live assignment held by a Confirmed/CheckedIn
-        // booking whose stay overlaps the range are returned.
-        if (query.AvailableFrom is not null || query.AvailableTo is not null)
+        if (freeFromUtc is not null)
+            q = q.Where(r => r.IsActive && r.Status != RoomStatus.Maintenance && r.Status != RoomStatus.Inactive);
+
+        var board = query.Status ?? RoomBoardFilter.All;
+        q = board switch
         {
-            if (query.AvailableFrom is null || query.AvailableTo is null || query.AvailableFrom >= query.AvailableTo)
-                return Error.Validation("room.invalid_availability_range",
-                    "availableFrom and availableTo must both be provided and availableFrom must be before availableTo");
-
-            var from = query.AvailableFrom.Value;
-            var to = query.AvailableTo.Value;
-
-            var busyRoomIds = await db.RoomAssignments
-                .Where(ra => ra.ReleasedAt == null)
-                .Join(db.Bookings.Where(b => (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
-                        && b.CheckInDate < to && b.CheckOutDate > from),
-                    ra => ra.BookingId, b => b.Id, (ra, b) => ra.RoomId)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            q = q.Where(r => r.IsActive
-                && r.Status != RoomStatus.Maintenance
-                && r.Status != RoomStatus.Inactive
-                && !busyRoomIds.Contains(r.Id));
-        }
-
-        // Date-based board: when a date is supplied, "Occupied" means a room assigned to a
-        // Confirmed/CheckedIn booking that covers that date, independent of the stored physical
-        // status. Without a date we fall back to the physical status (unchanged behaviour).
-        List<Guid>? occupiedRoomIds = null;
-        if (query.Date is DateOnly date)
-        {
-            occupiedRoomIds = await OccupiedRoomIdsAsync(date, cancellationToken);
-            var board = query.Status ?? RoomBoardFilter.All;
-            q = board switch
-            {
-                RoomBoardFilter.Maintenance => q.Where(r => r.Status == RoomStatus.Maintenance),
-                RoomBoardFilter.Inactive => q.Where(r => r.Status == RoomStatus.Inactive),
-                RoomBoardFilter.Occupied => q.Where(r => r.Status != RoomStatus.Maintenance && r.Status != RoomStatus.Inactive
-                    && occupiedRoomIds.Contains(r.Id)),
-                RoomBoardFilter.Available => q.Where(r => r.Status == RoomStatus.Available && !occupiedRoomIds.Contains(r.Id)),
-                _ => q
-            };
-        }
-        else if (query.Status is RoomBoardFilter board)
-        {
-            var status = MapBoardFilter(board);
-            if (status is not null)
-                q = q.Where(r => r.Status == status);
-        }
+            RoomBoardFilter.Maintenance => q.Where(r => r.Status == RoomStatus.Maintenance),
+            RoomBoardFilter.Inactive => q.Where(r => r.Status == RoomStatus.Inactive),
+            RoomBoardFilter.Occupied => q.Where(r => r.Status != RoomStatus.Maintenance && r.Status != RoomStatus.Inactive),
+            RoomBoardFilter.Available => q.Where(r => r.Status != RoomStatus.Maintenance && r.Status != RoomStatus.Inactive),
+            _ => q
+        };
 
         var joined = q.Join(db.RoomTypes, r => r.RoomTypeId, rt => rt.Id,
             (r, rt) => new { Room = r, RoomTypeName = rt.Name });
@@ -77,49 +101,116 @@ public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IR
             joined = joined.Where(x => x.Room.RoomNumber.Contains(search) || x.RoomTypeName.Contains(search));
         }
 
-        var total = await joined.CountAsync(cancellationToken);
+        var rows = await joined
+            .Select(x => new RoomRow(
+                x.Room.Id, x.Room.RoomNumber, x.Room.RoomTypeId, x.RoomTypeName, x.Room.Status, x.Room.Floor))
+            .ToListAsync(cancellationToken);
+
+        var items = new List<RoomListItemResponse>();
+        foreach (var row in rows)
+        {
+            var occupied = occupantAt.GetValueOrDefault(row.Id);
+            var effective = row.Status is RoomStatus.Maintenance or RoomStatus.Inactive
+                ? row.Status.ToString()
+                : occupied is not null ? nameof(RoomStatus.Occupied) : nameof(RoomStatus.Available);
+
+            if (board == RoomBoardFilter.Occupied && effective != nameof(RoomStatus.Occupied))
+                continue;
+            if (board == RoomBoardFilter.Available && effective != nameof(RoomStatus.Available))
+                continue;
+            if (busyRoomIds is not null && busyRoomIds.Contains(row.Id))
+                continue;
+
+            var arrival = nextArrival.GetValueOrDefault(row.Id);
+            var isInHouse = occupied is not null && occupied.Status == BookingStatus.CheckedIn;
+            var occupiedUntil = occupied is null ? (DateTime?)null : EffectiveEnd(occupied, nowUtc);
+            items.Add(new RoomListItemResponse(
+                row.Id, row.RoomNumber, row.RoomTypeId, row.RoomTypeName, row.Status.ToString(), row.Floor,
+                effective,
+                occupiedUntil is null ? null : StayFormat.Iso(occupiedUntil.Value, lagosOffset),
+                occupiedUntil is null ? null : StayFormat.Iso(occupiedUntil.Value.AddMinutes(turnaround), lagosOffset),
+                isInHouse ? occupied!.GuestName : null,
+                isInHouse ? occupied!.BookingId : null,
+                isInHouse ? occupied!.BookingReference : null,
+                isInHouse && occupied!.ActualCheckOutAt is null && occupied.CheckOutAt < nowUtc,
+                arrival is null ? null : StayFormat.Iso(arrival.CheckInAt, lagosOffset),
+                arrival?.GuestName));
+        }
 
         var descending = query.IsDescending;
-        var ordered = query.Sort?.Trim().ToLowerInvariant() switch
+        items = query.Sort?.Trim().ToLowerInvariant() switch
         {
-            "status" => Order(joined, x => x.Room.Status, descending),
-            "floor" => Order(joined, x => x.Room.Floor, descending),
-            "roomtypename" => Order(joined, x => x.RoomTypeName, descending),
-            _ => Order(joined, x => x.Room.RoomNumber, descending)
+            "status" => DescendingOrder(items, x => x.EffectiveStatus, descending),
+            "floor" => DescendingOrder(items, x => x.Floor, descending),
+            "roomtypename" => DescendingOrder(items, x => x.RoomTypeName, descending),
+            _ => DescendingOrder(items, x => x.RoomNumber, descending)
         };
 
-        var rows = await ordered
+        var total = items.Count;
+        var paged = items
             .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
-            .Select(x => new { x.Room.Id, x.Room.RoomNumber, x.Room.RoomTypeId, x.RoomTypeName, x.Room.Status, x.Room.Floor })
-            .ToListAsync(cancellationToken);
-
-        var items = rows
-            .Select(x => new RoomListItemResponse(
-                x.Id, x.RoomNumber, x.RoomTypeId, x.RoomTypeName, x.Status.ToString(), x.Floor,
-                EffectiveStatus(x.Status, x.Id, query.Date, occupiedRoomIds)))
             .ToList();
 
-        return new PaginatedResult<RoomListItemResponse>(items, total, query.Page, query.PageSize);
-
-        static IOrderedQueryable<T> Order<T, TKey>(IQueryable<T> source, Expression<Func<T, TKey>> key, bool descending) =>
-            descending ? source.OrderByDescending(key) : source.OrderBy(key);
+        return new PaginatedResult<RoomListItemResponse>(paged, total, query.Page, query.PageSize);
     }
 
-    private async Task<List<Guid>> OccupiedRoomIdsAsync(DateOnly date, CancellationToken cancellationToken) =>
-        await db.RoomAssignments
-            .Where(ra => ra.ReleasedAt == null)
-            .Join(db.Bookings.Where(b => (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
-                    && b.CheckInDate <= date && b.CheckOutDate > date),
-                ra => ra.BookingId, b => b.Id, (ra, b) => ra.RoomId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
+    private static List<RoomListItemResponse> DescendingOrder(
+        List<RoomListItemResponse> source, Func<RoomListItemResponse, string?> key, bool descending) =>
+        descending
+            ? source.OrderByDescending(key).ToList()
+            : source.OrderBy(key).ToList();
 
-    private static string EffectiveStatus(RoomStatus physical, Guid roomId, DateOnly? date, List<Guid>? occupied)
+    private static DateTime LocalToUtc(DateTime local, TimeSpan offset)
     {
-        if (date is null || physical is RoomStatus.Maintenance or RoomStatus.Inactive)
-            return physical.ToString();
-        return occupied!.Contains(roomId) ? nameof(RoomStatus.Occupied) : nameof(RoomStatus.Available);
+        var unspecified = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+        return DateTime.SpecifyKind(new DateTimeOffset(unspecified, offset).UtcDateTime, DateTimeKind.Utc);
+    }
+
+    private static DateTime EffectiveEnd(OccupancyRow row, DateTime nowUtc) =>
+        row.Status == BookingStatus.CheckedIn && row.ActualCheckOutAt is null && row.CheckOutAt < nowUtc
+            ? nowUtc
+            : row.CheckOutAt;
+
+    private static Dictionary<Guid, OccupancyRow> BuildOccupantMap(
+        List<OccupancyRow> rows, DateTime atUtc, DateTime nowUtc, int turnaround)
+    {
+        var map = new Dictionary<Guid, OccupancyRow>();
+        foreach (var row in rows)
+        {
+            var end = EffectiveEnd(row, nowUtc);
+            if (row.CheckInAt > atUtc || end.AddMinutes(turnaround) <= atUtc)
+                continue;
+            if (!map.TryGetValue(row.RoomId, out var current) || end < EffectiveEnd(current, nowUtc))
+                map[row.RoomId] = row;
+        }
+        return map;
+    }
+
+    private static Dictionary<Guid, OccupancyRow> BuildNextArrivalMap(List<OccupancyRow> rows, DateTime atUtc)
+    {
+        var map = new Dictionary<Guid, OccupancyRow>();
+        foreach (var row in rows)
+        {
+            if (row.Status == BookingStatus.CheckedIn || row.CheckInAt <= atUtc)
+                continue;
+            if (!map.TryGetValue(row.RoomId, out var current) || row.CheckInAt < current.CheckInAt)
+                map[row.RoomId] = row;
+        }
+        return map;
+    }
+
+    private static HashSet<Guid> BuildBusyRooms(
+        List<OccupancyRow> rows, DateTime fromUtc, DateTime toUtc, DateTime nowUtc, int turnaround)
+    {
+        var busy = new HashSet<Guid>();
+        foreach (var row in rows)
+        {
+            var end = EffectiveEnd(row, nowUtc);
+            if (row.CheckInAt < toUtc.AddMinutes(turnaround) && end.AddMinutes(turnaround) > fromUtc)
+                busy.Add(row.RoomId);
+        }
+        return busy;
     }
 
     public async Task<Result<RoomResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken)
@@ -237,12 +328,23 @@ public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IR
         return Result.Success();
     }
 
-    private static RoomStatus? MapBoardFilter(RoomBoardFilter filter) => filter switch
+    private sealed record OccupancyRow(
+        Guid RoomId,
+        Guid BookingId,
+        string BookingReference,
+        BookingStatus Status,
+        DateTime CheckInAt,
+        DateTime CheckOutAt,
+        DateTime? ActualCheckOutAt,
+        string? FirstName,
+        string? LastName)
     {
-        RoomBoardFilter.Available => RoomStatus.Available,
-        RoomBoardFilter.Occupied => RoomStatus.Occupied,
-        RoomBoardFilter.Maintenance => RoomStatus.Maintenance,
-        RoomBoardFilter.Inactive => RoomStatus.Inactive,
-        _ => null
-    };
+        public string? GuestName =>
+            string.Join(' ', new[] { FirstName, LastName }.Where(s => !string.IsNullOrWhiteSpace(s))) is { Length: > 0 } name
+                ? name
+                : null;
+    }
+
+    private sealed record RoomRow(
+        Guid Id, string RoomNumber, Guid RoomTypeId, string RoomTypeName, RoomStatus Status, string? Floor);
 }

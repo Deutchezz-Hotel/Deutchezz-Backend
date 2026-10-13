@@ -6,9 +6,10 @@ public sealed record BookingConfirmationModel(
     string BookingReference,
     string GuestName,
     DateOnly CheckInDate,
-    DateOnly CheckOutDate,
-    int Nights,
     TimeOnly CheckInTime,
+    DateOnly CheckOutDate,
+    TimeOnly CheckOutTime,
+    int Nights,
     IReadOnlyList<BookingConfirmationRoom> Rooms,
     decimal TotalAmount);
 
@@ -35,8 +36,12 @@ public static class BookingConfirmationEmail
               </tr>
             </table>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18px;">
-              <tr><td style="padding:6px 0;"><strong style="color:#4A2C1A;">Check-in:</strong> {model.CheckInDate:yyyy-MM-dd} from {model.CheckInTime:HH\:mm}</td></tr>
-              <tr><td style="padding:6px 0;"><strong style="color:#4A2C1A;">Check-out:</strong> {model.CheckOutDate:yyyy-MM-dd}</td></tr>
+              <tr>
+                <td style="padding:6px 0;">{Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-in", model.CheckInDate, model.CheckInTime, true)}</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;">{Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-out", model.CheckOutDate, model.CheckOutTime, false)}</td>
+              </tr>
               <tr><td style="padding:6px 0;"><strong style="color:#4A2C1A;">Nights:</strong> {model.Nights}</td></tr>
             </table>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:18px;">
@@ -44,7 +49,7 @@ public static class BookingConfirmationEmail
               {EmailLayout.TotalRow("Total", model.TotalAmount)}
             </table>
             <p style="margin:0;color:#6B5B4B;font-size:13px;">
-              Check-in opens at {model.CheckInTime:HH\:mm} on {model.CheckInDate:yyyy-MM-dd}.
+              {Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-in", model.CheckInDate, model.CheckInTime, true)}.
               Please present this reference at reception.
             </p>
             """;
@@ -52,8 +57,8 @@ public static class BookingConfirmationEmail
         var text = EmailLayout.PlainText("Booking received",
             $"Booking reference: {model.BookingReference}",
             $"Guest: {model.GuestName}",
-            $"Check-in: {model.CheckInDate:yyyy-MM-dd} from {model.CheckInTime:HH\\:mm}",
-            $"Check-out: {model.CheckOutDate:yyyy-MM-dd}",
+            Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-in", model.CheckInDate, model.CheckInTime, true),
+            Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-out", model.CheckOutDate, model.CheckOutTime, false),
             $"Nights: {model.Nights}",
             $"Rooms: {string.Join(", ", model.Rooms.Select(r => $"{r.RoomTypeName} x{r.Quantity} @ {r.RatePerNight:N0}/night"))}",
             $"Total: NGN {model.TotalAmount:N2}",

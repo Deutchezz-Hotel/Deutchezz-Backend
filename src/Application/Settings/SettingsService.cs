@@ -15,7 +15,14 @@ public record AdminSettingsResponse(
     int CancellationWindowHours,
     bool RequireFullPaymentAtCheckIn,
     bool RequirePaymentBeforeCheckOut,
-    bool EarlyCheckOutRequiresAdmin);
+    bool EarlyCheckOutRequiresAdmin,
+    int TimeSlotMinutes,
+    string EarliestCheckInTime,
+    string LatestCheckInTime,
+    string EarliestCheckOutTime,
+    string LatestCheckOutTime,
+    int MaxExtraHoursPerStay,
+    int TurnaroundMinutes);
 
 public record UpdateAdminSettingsRequest(
     int? MaxRoomsPerBooking,
@@ -24,7 +31,14 @@ public record UpdateAdminSettingsRequest(
     int? CancellationWindowHours,
     bool? RequireFullPaymentAtCheckIn,
     bool? RequirePaymentBeforeCheckOut,
-    bool? EarlyCheckOutRequiresAdmin);
+    bool? EarlyCheckOutRequiresAdmin,
+    int? TimeSlotMinutes,
+    string? EarliestCheckInTime,
+    string? LatestCheckInTime,
+    string? EarliestCheckOutTime,
+    string? LatestCheckOutTime,
+    int? MaxExtraHoursPerStay,
+    int? TurnaroundMinutes);
 
 public interface IAdminSettingsService
 {
@@ -45,6 +59,13 @@ public class AdminSettingsService(
     private const string RequireFullPaymentAtCheckInKey = "RequireFullPaymentAtCheckIn";
     private const string RequirePaymentBeforeCheckOutKey = "RequirePaymentBeforeCheckOut";
     private const string EarlyCheckOutRequiresAdminKey = "EarlyCheckOutRequiresAdmin";
+    private const string TimeSlotMinutesKey = "TimeSlotMinutes";
+    private const string EarliestCheckInTimeKey = "EarliestCheckInTime";
+    private const string LatestCheckInTimeKey = "LatestCheckInTime";
+    private const string EarliestCheckOutTimeKey = "EarliestCheckOutTime";
+    private const string LatestCheckOutTimeKey = "LatestCheckOutTime";
+    private const string MaxExtraHoursPerStayKey = "MaxExtraHoursPerStay";
+    private const string TurnaroundMinutesKey = "TurnaroundMinutes";
 
     public async Task<Result<AdminSettingsResponse>> GetAsync(CancellationToken cancellationToken)
     {
@@ -57,7 +78,14 @@ public class AdminSettingsService(
             GetInt(stored, CancellationWindowKey, cancellation.Value.WindowHours),
             GetBool(stored, RequireFullPaymentAtCheckInKey, settings.Value.RequireFullPaymentAtCheckIn),
             GetBool(stored, RequirePaymentBeforeCheckOutKey, settings.Value.RequirePaymentBeforeCheckOut),
-            GetBool(stored, EarlyCheckOutRequiresAdminKey, settings.Value.EarlyCheckOutRequiresAdmin));
+            GetBool(stored, EarlyCheckOutRequiresAdminKey, settings.Value.EarlyCheckOutRequiresAdmin),
+            GetInt(stored, TimeSlotMinutesKey, settings.Value.TimeSlotMinutes),
+            GetTime(stored, EarliestCheckInTimeKey, settings.Value.EarliestCheckInTime),
+            GetTime(stored, LatestCheckInTimeKey, settings.Value.LatestCheckInTime),
+            GetTime(stored, EarliestCheckOutTimeKey, settings.Value.EarliestCheckOutTime),
+            GetTime(stored, LatestCheckOutTimeKey, settings.Value.LatestCheckOutTime),
+            GetInt(stored, MaxExtraHoursPerStayKey, settings.Value.MaxExtraHoursPerStay),
+            GetInt(stored, TurnaroundMinutesKey, settings.Value.TurnaroundMinutes));
     }
 
     public async Task<Result<AdminSettingsResponse>> UpdateAsync(
@@ -71,8 +99,22 @@ public class AdminSettingsService(
             return Error.Validation("settings.invalid_check_out_time", "CheckOutTime must be a time such as 12:00");
         if (request.CancellationWindowHours is < 1 or > 8760)
             return Error.Validation("settings.invalid_cancellation_window", "CancellationWindowHours must be between 1 and 8760");
+        if (request.TimeSlotMinutes is < 1 or > 1440)
+            return Error.Validation("settings.invalid_time_slot", "TimeSlotMinutes must be between 1 and 1440");
+        if (request.MaxExtraHoursPerStay is < 0 or > 720)
+            return Error.Validation("settings.invalid_max_extra_hours", "MaxExtraHoursPerStay must be between 0 and 720");
+        if (request.TurnaroundMinutes is < 0 or > 1440)
+            return Error.Validation("settings.invalid_turnaround", "TurnaroundMinutes must be between 0 and 1440");
+        if (request.EarliestCheckInTime is not null && !TimeOnly.TryParse(request.EarliestCheckInTime, out _))
+            return Error.Validation("settings.invalid_earliest_check_in_time", "EarliestCheckInTime must be a time such as 00:00");
+        if (request.LatestCheckInTime is not null && !TimeOnly.TryParse(request.LatestCheckInTime, out _))
+            return Error.Validation("settings.invalid_latest_check_in_time", "LatestCheckInTime must be a time such as 23:30");
+        if (request.EarliestCheckOutTime is not null && !TimeOnly.TryParse(request.EarliestCheckOutTime, out _))
+            return Error.Validation("settings.invalid_earliest_check_out_time", "EarliestCheckOutTime must be a time such as 00:00");
+        if (request.LatestCheckOutTime is not null && !TimeOnly.TryParse(request.LatestCheckOutTime, out _))
+            return Error.Validation("settings.invalid_latest_check_out_time", "LatestCheckOutTime must be a time such as 23:30");
 
-        var edits = new List<(string Key, string Value)>(7);
+        var edits = new List<(string Key, string Value)>(14);
 
         if (request.MaxRoomsPerBooking is not null)
             edits.Add((MaxRoomsKey, request.MaxRoomsPerBooking.Value.ToString()));
@@ -88,6 +130,20 @@ public class AdminSettingsService(
             edits.Add((RequirePaymentBeforeCheckOutKey, request.RequirePaymentBeforeCheckOut.Value.ToString()));
         if (request.EarlyCheckOutRequiresAdmin is not null)
             edits.Add((EarlyCheckOutRequiresAdminKey, request.EarlyCheckOutRequiresAdmin.Value.ToString()));
+        if (request.TimeSlotMinutes is not null)
+            edits.Add((TimeSlotMinutesKey, request.TimeSlotMinutes.Value.ToString()));
+        if (request.EarliestCheckInTime is not null)
+            edits.Add((EarliestCheckInTimeKey, request.EarliestCheckInTime));
+        if (request.LatestCheckInTime is not null)
+            edits.Add((LatestCheckInTimeKey, request.LatestCheckInTime));
+        if (request.EarliestCheckOutTime is not null)
+            edits.Add((EarliestCheckOutTimeKey, request.EarliestCheckOutTime));
+        if (request.LatestCheckOutTime is not null)
+            edits.Add((LatestCheckOutTimeKey, request.LatestCheckOutTime));
+        if (request.MaxExtraHoursPerStay is not null)
+            edits.Add((MaxExtraHoursPerStayKey, request.MaxExtraHoursPerStay.Value.ToString()));
+        if (request.TurnaroundMinutes is not null)
+            edits.Add((TurnaroundMinutesKey, request.TurnaroundMinutes.Value.ToString()));
 
         foreach (var (key, value) in edits)
         {

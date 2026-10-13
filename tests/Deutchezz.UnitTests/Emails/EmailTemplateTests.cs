@@ -22,17 +22,17 @@ public class EmailTemplateTests
         const string Ref = "DHI-2026-ABC234";
         var date = new DateOnly(2026, 11, 3);
         yield return Row("booking-confirmation",
-            BookingConfirmationEmail.Build(new BookingConfirmationModel(Ref, "Ada Obi", date, date.AddDays(2), 2, new TimeOnly(14, 0), Rooms, 220000m)));
+            BookingConfirmationEmail.Build(new BookingConfirmationModel(Ref, "Ada Obi", date, new TimeOnly(14, 0), date.AddDays(2), new TimeOnly(12, 0), 2, Rooms, 220000m)));
         yield return Row("booking-updated",
-            BookingUpdatedEmail.Build(new BookingUpdatedModel(Ref, "Ada Obi", date, date.AddDays(2), 2, Rooms, 220000m)));
+            BookingUpdatedEmail.Build(new BookingUpdatedModel(Ref, "Ada Obi", date, new TimeOnly(14, 0), date.AddDays(2), new TimeOnly(12, 0), 2, Rooms, 220000m)));
         yield return Row("booking-cancellation",
-            BookingCancellationEmail.Build(new BookingCancellationModel(Ref, "Ada Obi", date, date.AddDays(2), "GuestRequest", 50000m)));
+            BookingCancellationEmail.Build(new BookingCancellationModel(Ref, "Ada Obi", date, new TimeOnly(14, 0), date.AddDays(2), new TimeOnly(12, 0), "GuestRequest", 50000m)));
         yield return Row("payment-receipt",
             PaymentReceiptEmail.Build(new PaymentReceiptModel(Ref, "Ada Obi", 50000m, "Cash", "RC-1", 220000m, 70000m, 150000m, new DateTime(2026, 11, 1, 9, 30, 0, DateTimeKind.Utc))));
         yield return Row("checked-in",
-            StayNotificationEmail.BuildCheckIn(new StayNotificationModel(Ref, "Ada Obi", ["101", "102"], new DateTime(2026, 11, 3, 14, 5, 0, DateTimeKind.Utc))));
+            StayNotificationEmail.BuildCheckIn(new StayNotificationModel(Ref, "Ada Obi", ["101", "102"], date, new TimeOnly(14, 0), date.AddDays(2), new TimeOnly(12, 0), new DateTime(2026, 11, 3, 14, 5, 0, DateTimeKind.Utc))));
         yield return Row("checked-out",
-            StayNotificationEmail.BuildCheckOut(new StayNotificationModel(Ref, "Ada Obi", ["101", "102"], new DateTime(2026, 11, 5, 11, 0, 0, DateTimeKind.Utc))));
+            StayNotificationEmail.BuildCheckOut(new StayNotificationModel(Ref, "Ada Obi", ["101", "102"], date, new TimeOnly(14, 0), date.AddDays(2), new TimeOnly(12, 0), new DateTime(2026, 11, 5, 11, 0, 0, DateTimeKind.Utc))));
         yield return Row("email-verification",
             EmailVerificationEmail.Build(new EmailVerificationModel("Ada Obi", "123456", 15)));
         yield return Row("existing-account",
@@ -44,9 +44,9 @@ public class EmailTemplateTests
         yield return Row("role-changed",
             RoleChangedEmail.Build(new RoleChangedModel("Ada Obi", "Receptionist")));
         yield return Row("reception-booking-summary",
-            ReceptionBookingSummaryEmail.Build(new ReceptionBookingSummaryModel(Ref, "Walk In", "+2348031234567", date, date.AddDays(2), 2, Rooms, 220000m)));
+            ReceptionBookingSummaryEmail.Build(new ReceptionBookingSummaryModel(Ref, "Walk In", "+2348031234567", date, new TimeOnly(14, 0), date.AddDays(2), new TimeOnly(12, 0), 2, Rooms, 220000m)));
         yield return Row("staff-new-booking-alert",
-            StaffNewBookingAlertEmail.Build(new StaffNewBookingAlertModel(Ref, "Ada Obi", "ada@example.com", "+2348031234567", date, date.AddDays(2), 2, Rooms, 220000m)));
+            StaffNewBookingAlertEmail.Build(new StaffNewBookingAlertModel(Ref, "Ada Obi", "ada@example.com", "+2348031234567", date, new TimeOnly(14, 0), date.AddDays(2), new TimeOnly(12, 0), 2, Rooms, 220000m)));
     }
 
     private static object[] Row(string slug, (string Subject, string Html, string Text) email) =>
@@ -85,8 +85,8 @@ public class EmailTemplateTests
     {
         // Rebuild with a hostile guest name by using the confirmation template as the probe.
         var host = BookingConfirmationEmail.Build(new BookingConfirmationModel(
-            "DHI-2026-ABC234", "<script>alert('x')</script>", new DateOnly(2026, 11, 3), new DateOnly(2026, 11, 5),
-            2, new TimeOnly(14, 0), Rooms, 220000m));
+            "DHI-2026-ABC234", "<script>alert('x')</script>", new DateOnly(2026, 11, 3), new TimeOnly(14, 0), new DateOnly(2026, 11, 5), new TimeOnly(12, 0),
+            2, Rooms, 220000m));
 
         Assert.DoesNotContain("<script", host.Html);
         Assert.Contains("&lt;script&gt;", host.Html);
@@ -112,8 +112,8 @@ public class EmailTemplateTests
     public void Booking_templates_carry_the_reference_and_total()
     {
         var (_, html, text) = BookingConfirmationEmail.Build(new BookingConfirmationModel(
-            "DHI-2026-XYZ999", "Ada Obi", new DateOnly(2026, 11, 3), new DateOnly(2026, 11, 5),
-            2, new TimeOnly(14, 0), Rooms, 220000m));
+            "DHI-2026-XYZ999", "Ada Obi", new DateOnly(2026, 11, 3), new TimeOnly(14, 0), new DateOnly(2026, 11, 5), new TimeOnly(12, 0),
+            2, Rooms, 220000m));
 
         Assert.Contains("DHI-2026-XYZ999", html);
         Assert.Contains("DHI-2026-XYZ999", text);

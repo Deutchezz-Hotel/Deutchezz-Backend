@@ -8,7 +8,9 @@ public record BookingRoomRequest(Guid RoomTypeId, int Quantity);
 
 public record CreateBookingRequest(
     DateOnly CheckInDate,
+    string? CheckInTime,
     DateOnly CheckOutDate,
+    string? CheckOutTime,
     int Adults,
     int Children,
     GuestInfoRequest Guest,
@@ -20,7 +22,9 @@ public record ReceptionGuestRequest(string FirstName, string LastName, string Ph
 
 public record ReceptionCreateBookingRequest(
     DateOnly CheckInDate,
+    string? CheckInTime,
     DateOnly CheckOutDate,
+    string? CheckOutTime,
     int Adults,
     int Children,
     ReceptionGuestRequest Guest,
@@ -44,7 +48,9 @@ public record AnonymousCancelBookingRequest(string BookingReference, string Emai
 
 public record RoomAssignmentLineRequest(Guid BookingRoomTypeId, Guid RoomId);
 
-public record RoomAssignmentRequest(List<RoomAssignmentLineRequest> Assignments);
+public record RoomAssignmentRequest(
+    List<RoomAssignmentLineRequest> Assignments,
+    bool AcknowledgeLateAvailability = false);
 
 public record CheckInRequest();
 
@@ -88,6 +94,12 @@ public record BookingDetailResponse(
     string? GuestPhoneNumber,
     DateOnly CheckInDate,
     DateOnly CheckOutDate,
+    string CheckInTime,
+    string CheckOutTime,
+    string CheckInAt,
+    string CheckOutAt,
+    string? ActualCheckInAt,
+    string? ActualCheckOutAt,
     int Nights,
     int Adults,
     int Children,
@@ -110,6 +122,12 @@ public record BookingListItemResponse(
     string? GuestPhoneNumber,
     DateOnly CheckInDate,
     DateOnly CheckOutDate,
+    string CheckInTime,
+    string CheckOutTime,
+    string CheckInAt,
+    string CheckOutAt,
+    string? ActualCheckInAt,
+    string? ActualCheckOutAt,
     string Status,
     string PaymentStatus,
     string Source,
@@ -138,7 +156,16 @@ public record ChangeRoomTypeRequest(Guid BookingRoomTypeId, Guid NewRoomTypeId, 
 
 public record ChangeRoomTypeResponse(BookingDetailResponse Booking, List<string> AssignmentsCleared);
 
-public record ReassignRoomRequest(Guid RoomAssignmentId, Guid NewRoomId, string? Reason);
+/// <summary>A per-room conflict reported in a 409 <c>room.occupied_until</c> response (v1.12).</summary>
+public record RoomConflictResponse(
+    Guid RoomId,
+    string RoomNumber,
+    DateTime OccupiedUntil,
+    string? OccupantGuestName,
+    string? OccupantBookingReference,
+    DateTime RequestedCheckInAt);
+
+public record ReassignRoomRequest(Guid RoomAssignmentId, Guid NewRoomId, string? Reason, bool AcknowledgeLateAvailability = false);
 
 public record UnassignRoomRequest(Guid RoomAssignmentId);
 
@@ -169,6 +196,10 @@ public class BookingSearchQuery : QueryParameters
     /// <summary>Reception filter: confirmed bookings whose check-in date is before today
     /// (Africa/Lagos) — guests who have not arrived yet.</summary>
     public bool OverdueArrivals { get; set; }
+
+    /// <summary>Reception filter (v1.12): checked-in bookings whose scheduled check-out instant
+    /// is before now — guests who have overstayed.</summary>
+    public bool OverdueCheckOuts { get; set; }
 
     /// <summary>Reception filter (7l): only bookings whose outstanding balance is positive and
     /// which are not cancelled. Backs the "record payment" combobox.</summary>

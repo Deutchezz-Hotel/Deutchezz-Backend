@@ -116,8 +116,9 @@ public class StayChangeTests(HotelWebApplicationFactory factory) : IntegrationTe
         {
             var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
             var entity = await db.Bookings.FirstAsync(b => b.Id == bookingId);
-            entity.CheckInDate = Clock.Today.AddDays(-3);
-            entity.CheckOutDate = Clock.Today.AddDays(-1);
+            var offset = Clock.ConvertFromUtc(Clock.UtcNow).Offset;
+            entity.SetStay(Clock.Today.AddDays(-3), new TimeOnly(14, 0),
+                Clock.Today.AddDays(-1), new TimeOnly(12, 0), offset);
             await db.SaveChangesAsync(default);
         }
 
@@ -461,7 +462,7 @@ public class StayChangeTests(HotelWebApplicationFactory factory) : IntegrationTe
         var response = await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{secondId}/reassign-room",
             new { roomAssignmentId = secondAssignmentId, newRoomId = firstRoomId, reason = "Quieter" });
 
-        await AssertProblemAsync(response, (int)HttpStatusCode.Conflict, "booking.room_unavailable");
+        await AssertProblemAsync(response, (int)HttpStatusCode.Conflict, "room.occupied_until");
     }
 
     [Fact]
@@ -695,7 +696,7 @@ public class StayChangeTests(HotelWebApplicationFactory factory) : IntegrationTe
     private static async Task AssignRoomAsync(HttpClient staff, Guid bookingId, Guid lineId, Guid roomId)
     {
         var response = await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{bookingId}/assign-rooms",
-            new { assignments = new[] { new { bookingRoomTypeId = lineId, roomId } } });
+            new { assignments = new[] { new { bookingRoomTypeId = lineId, roomId } }, acknowledgeLateAvailability = true });
         response.EnsureSuccessStatusCode();
     }
 

@@ -7,6 +7,7 @@ using Deutchezz.Application.Common;
 using Deutchezz.Application.Common.Options;
 using Deutchezz.Application.Data;
 using Deutchezz.Application.Emails;
+using Deutchezz.Application.Stays;
 using Deutchezz.Domain.Common;
 using Deutchezz.Domain.Entities;
 using Deutchezz.Domain.Enums;
@@ -24,6 +25,8 @@ public class BookingService(
     IEmailSender emailSender,
     IActivityLogger activityLogger,
     ISettingsProvider settings,
+    IStayPolicyService stays,
+    IStayConflictService conflicts,
     IOptions<EmailOptions> emailOptions) : IBookingService
 {
     private const int MaxNights = 30;
@@ -34,10 +37,14 @@ public class BookingService(
             ["createdAt"] = b => b.CreatedAt,
             ["checkInDate"] = b => b.CheckInDate,
             ["checkOutDate"] = b => b.CheckOutDate,
+            ["checkInAt"] = b => b.CheckInAt,
+            ["checkOutAt"] = b => b.CheckOutAt,
             ["bookingReference"] = b => b.BookingReference,
             ["totalAmount"] = b => b.TotalAmount,
             ["status"] = b => b.Status
         };
+
+    private TimeSpan LagosOffset() => businessClock.ConvertFromUtc(businessClock.UtcNow).Offset;
 
     public async Task<Result<CreateBookingResponse>> CreateAsync(
         CreateBookingRequest request, Guid? userId, string idempotencyKey, CancellationToken cancellationToken)
@@ -45,13 +52,13 @@ public class BookingService(
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             return Error.Validation("booking.idempotency_key_required", "The Idempotency-Key header is required");
 
-        var today = clock.Today;
+        var stay = await stays.ResolveAsync(
+            request.CheckInDate, request.CheckInTime, request.CheckOutDate, request.CheckOutTime, false, cancellationToken);
+        if (stay.IsFailure)
+            return stay.Error;
+        var s = stay.Value;
 
-        if (request.CheckInDate < today)
-            return Error.Validation("booking.checkin_past", "Check-in date cannot be in the past");
-        if (request.CheckOutDate <= request.CheckInDate)
-            return Error.Validation("booking.invalid_range", "Check-out must be after check-in");
-        if (request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber > MaxNights)
+        if (s.Nights > MaxNights)
             return Error.Validation("booking.too_long", $"Stay cannot exceed {MaxNights} nights");
         if (request.Rooms is null || request.Rooms.Count == 0)
             return Error.Validation("booking.no_rooms", "At least one room type is required");
@@ -84,7 +91,7 @@ public class BookingService(
         try
         {
             return await CreateInTransactionAsync(
-                request, userId, idempotencyKey, requestHash, roomTypeIds, cancellationToken);
+                request, userId, idempotencyKey, requestHash, roomTypeIds, s, cancellationToken);
         }
         catch (DbUpdateException ex) when (IsIdempotencyKeyConflict(ex))
         {
@@ -104,13 +111,13 @@ public class BookingService(
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             return Error.Validation("booking.idempotency_key_required", "The Idempotency-Key header is required");
 
-        var today = clock.Today;
+        var stay = await stays.ResolveAsync(
+            request.CheckInDate, request.CheckInTime, request.CheckOutDate, request.CheckOutTime, true, cancellationToken);
+        if (stay.IsFailure)
+            return stay.Error;
+        var s = stay.Value;
 
-        if (request.CheckInDate < today)
-            return Error.Validation("booking.checkin_past", "Check-in date cannot be in the past");
-        if (request.CheckOutDate <= request.CheckInDate)
-            return Error.Validation("booking.invalid_range", "Check-out must be after check-in");
-        if (request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber > MaxNights)
+        if (s.Nights > MaxNights)
             return Error.Validation("booking.too_long", $"Stay cannot exceed {MaxNights} nights");
         if (request.Rooms is null || request.Rooms.Count == 0)
             return Error.Validation("booking.no_rooms", "At least one room type is required");
@@ -144,7 +151,7 @@ public class BookingService(
         try
         {
             return await ReceptionCreateInTransactionAsync(
-                request, staffUserId, normalizedPhone, idempotencyKey, requestHash, roomTypeIds, cancellationToken);
+                request, staffUserId, normalizedPhone, idempotencyKey, requestHash, roomTypeIds, s, cancellationToken);
         }
         catch (DbUpdateException ex) when (IsIdempotencyKeyConflict(ex))
         {
@@ -159,14 +166,14 @@ public class BookingService(
 
     private async Task<Result<CreateBookingResponse>> ReceptionCreateInTransactionAsync(
         ReceptionCreateBookingRequest request, Guid staffUserId, string normalizedPhone, string idempotencyKey,
-        string requestHash, List<Guid> roomTypeIds, CancellationToken cancellationToken)
+        string requestHash, List<Guid> roomTypeIds, StayWindow s, CancellationToken cancellationToken)
     {
-        var nights = request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber;
+        var nights = s.Nights;
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         var availability = await ReserveAvailabilityAsync(
-            roomTypeIds, request.Rooms, request.CheckInDate, request.CheckOutDate, cancellationToken);
+            roomTypeIds, request.Rooms, s.CheckInAt, s.CheckOutAt, s.Policy.TurnaroundMinutes, cancellationToken);
         if (availability.IsFailure)
             return availability.Error;
         var roomTypes = availability.Value;
@@ -177,9 +184,6 @@ public class BookingService(
         {
             BookingReference = referenceGenerator.Generate(),
             GuestId = guest.Id,
-            CheckInDate = request.CheckInDate,
-            CheckOutDate = request.CheckOutDate,
-            Nights = nights,
             Adults = request.Adults,
             Children = request.Children,
             SpecialRequests = null,
@@ -192,6 +196,7 @@ public class BookingService(
             IdempotencyRequestHash = requestHash,
             ConcurrencyToken = Guid.NewGuid().ToByteArray()
         };
+        booking.SetStay(s.CheckInDate, s.CheckInTime, s.CheckOutDate, s.CheckOutTime, LagosOffset());
 
         var total = 0m;
         foreach (var line in request.Rooms)
@@ -240,8 +245,10 @@ public class BookingService(
                 booking.BookingReference,
                 guestName,
                 normalizedPhone,
-                request.CheckInDate,
-                request.CheckOutDate,
+                s.CheckInDate,
+                s.CheckInTime,
+                s.CheckOutDate,
+                s.CheckOutTime,
                 nights,
                 summaryRooms,
                 total));
@@ -278,9 +285,9 @@ public class BookingService(
 
     private async Task<Result<CreateBookingResponse>> CreateInTransactionAsync(
         CreateBookingRequest request, Guid? userId, string idempotencyKey, string requestHash,
-        List<Guid> roomTypeIds, CancellationToken cancellationToken)
+        List<Guid> roomTypeIds, StayWindow s, CancellationToken cancellationToken)
     {
-        var nights = request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber;
+        var nights = s.Nights;
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
@@ -307,7 +314,7 @@ public class BookingService(
         }
 
         var availability = await ReserveAvailabilityAsync(
-            roomTypeIds, request.Rooms, request.CheckInDate, request.CheckOutDate, cancellationToken);
+            roomTypeIds, request.Rooms, s.CheckInAt, s.CheckOutAt, s.Policy.TurnaroundMinutes, cancellationToken);
         if (availability.IsFailure)
             return availability.Error;
         var roomTypes = availability.Value;
@@ -318,9 +325,6 @@ public class BookingService(
         {
             BookingReference = referenceGenerator.Generate(),
             GuestId = guest.Id,
-            CheckInDate = request.CheckInDate,
-            CheckOutDate = request.CheckOutDate,
-            Nights = nights,
             Adults = request.Adults,
             Children = request.Children,
             SpecialRequests = request.SpecialRequests,
@@ -333,6 +337,7 @@ public class BookingService(
             IdempotencyRequestHash = requestHash,
             ConcurrencyToken = Guid.NewGuid().ToByteArray()
         };
+        booking.SetStay(s.CheckInDate, s.CheckInTime, s.CheckOutDate, s.CheckOutTime, LagosOffset());
 
         var total = 0m;
         foreach (var line in request.Rooms)
@@ -363,7 +368,8 @@ public class BookingService(
                 UserId = guest.UserId,
                 Type = NotificationType.BookingConfirmed,
                 Title = "Booking confirmed",
-                Message = $"Your booking {booking.BookingReference} is confirmed. Check-in: {request.CheckInDate:yyyy-MM-dd}.",
+                Message = $"Your booking {booking.BookingReference} is confirmed. "
+                    + StayFormat.ScheduleLine("Check-in", s.CheckInDate, s.CheckInTime, true) + ".",
                 CreatedAt = clock.UtcNow
             });
         }
@@ -384,10 +390,11 @@ public class BookingService(
         var (subject, html, text) = BookingConfirmationEmail.Build(new BookingConfirmationModel(
             booking.BookingReference,
             $"{request.Guest.FirstName} {request.Guest.LastName}".Trim(),
-            request.CheckInDate,
-            request.CheckOutDate,
+            s.CheckInDate,
+            s.CheckInTime,
+            s.CheckOutDate,
+            s.CheckOutTime,
             nights,
-            settings.CheckInTime,
             emailRooms,
             total));
 
@@ -405,8 +412,10 @@ public class BookingService(
                 $"{request.Guest.FirstName} {request.Guest.LastName}".Trim(),
                 request.Guest.Email,
                 request.Guest.PhoneNumber ?? string.Empty,
-                request.CheckInDate,
-                request.CheckOutDate,
+                s.CheckInDate,
+                s.CheckInTime,
+                s.CheckOutDate,
+                s.CheckOutTime,
                 nights,
                 emailRooms,
                 total));
@@ -424,8 +433,8 @@ public class BookingService(
     /// overbook. Returns the locked room types keyed by Id, or a validation/conflict error.
     /// </summary>
     private async Task<Result<Dictionary<Guid, RoomType>>> ReserveAvailabilityAsync(
-        List<Guid> roomTypeIds, IReadOnlyList<BookingRoomRequest> rooms, DateOnly checkInDate, DateOnly checkOutDate,
-        CancellationToken cancellationToken)
+        List<Guid> roomTypeIds, IReadOnlyList<BookingRoomRequest> rooms, DateTime checkInAt, DateTime checkOutAt,
+        int turnaroundMinutes, CancellationToken cancellationToken)
     {
         await db.Database.ExecuteSqlRawAsync(
             "SELECT 1 FROM \"RoomTypes\" WHERE \"Id\" = ANY({0}) ORDER BY \"Id\" FOR UPDATE",
@@ -447,12 +456,8 @@ public class BookingService(
                     && r.Status != RoomStatus.Maintenance && r.Status != RoomStatus.Inactive,
                 cancellationToken);
 
-            var booked = await db.BookingRoomTypes
-                .Where(brt => brt.RoomTypeId == line.RoomTypeId)
-                .Join(db.Bookings.Where(b => (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
-                        && b.CheckInDate < checkOutDate && b.CheckOutDate > checkInDate),
-                    brt => brt.BookingId, b => b.Id, (brt, b) => brt.Quantity)
-                .SumAsync(q => (int?)q, cancellationToken) ?? 0;
+            var booked = await conflicts.CountOverlappingQuantityAsync(
+                line.RoomTypeId, null, checkInAt, checkOutAt, turnaroundMinutes, cancellationToken);
 
             if (capacity - booked < line.Quantity)
                 return Error.Conflict("booking.unavailable",
@@ -720,7 +725,9 @@ public class BookingService(
                 booking.BookingReference,
                 $"{booking.Guest.FirstName} {booking.Guest.LastName}".Trim(),
                 booking.CheckInDate,
+                booking.CheckInLocalTime(LagosOffset()),
                 booking.CheckOutDate,
+                booking.CheckOutLocalTime(LagosOffset()),
                 reason,
                 refundedAmount > 0 ? refundedAmount : null));
             _ = emailSender.SendAsync(email, subject, html, text, CancellationToken.None);
@@ -813,7 +820,9 @@ public class BookingService(
                 booking.BookingReference,
                 guestName,
                 booking.CheckInDate,
+                booking.CheckInLocalTime(LagosOffset()),
                 booking.CheckOutDate,
+                booking.CheckOutLocalTime(LagosOffset()),
                 request.Reason.ToString(),
                 request.RefundPaidAmounts && refundedAmount > 0 ? refundedAmount : null));
             await emailSender.SendAsync(email, subject, html, text, CancellationToken.None);
@@ -823,14 +832,11 @@ public class BookingService(
     }
 
     /// <summary>Whether <paramref name="booking"/> is currently before the free-cancellation
-    /// deadline (BR-024): now &lt; check-in day start in Africa/Lagos minus the cancellation window.</summary>
+    /// deadline (BR-024): now &lt; the check-in instant minus the cancellation window.</summary>
     private bool IsWithinCancellationWindow(Booking booking, int windowHours)
     {
         var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
-        var lagosOffset = businessClock.ConvertFromUtc(new DateTimeOffset(nowUtc)).Offset;
-        var checkInStartLagos = new DateTimeOffset(booking.CheckInDate.ToDateTime(TimeOnly.MinValue), lagosOffset);
-        var deadlineUtc = checkInStartLagos.UtcDateTime.AddHours(-windowHours);
-        return nowUtc < deadlineUtc;
+        return nowUtc < booking.CheckInAt.AddHours(-windowHours);
     }
 
     /// <summary>Marks every Paid payment of the booking as Refunded and returns the total refunded.</summary>
@@ -911,6 +917,12 @@ public class BookingService(
             q = q.Where(b => b.Status == BookingStatus.Confirmed && b.CheckInDate < today);
         }
 
+        if (query.OverdueCheckOuts)
+        {
+            var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+            q = q.Where(b => b.Status == BookingStatus.CheckedIn && b.CheckOutAt < nowUtc);
+        }
+
         if (!string.IsNullOrWhiteSpace(query.Reference))
             q = q.Where(b => b.BookingReference.Contains(query.Reference));
 
@@ -940,11 +952,13 @@ public class BookingService(
 
         var totalCount = await q.CountAsync(cancellationToken);
 
-        var items = await ProjectList(q
+        var rows = await ProjectList(q
                 .ApplySort(query, Sortable, qq => qq.OrderByDescending(b => b.CreatedAt))
                 .Skip((query.Page - 1) * query.PageSize)
                 .Take(query.PageSize))
             .ToListAsync(cancellationToken);
+
+        var items = rows.Select(ToListItem).ToList();
 
         return new PaginatedResult<BookingListItemResponse>(items, totalCount, query.Page, query.PageSize);
     }
@@ -966,31 +980,67 @@ public class BookingService(
 
         var totalCount = await q.CountAsync(cancellationToken);
 
-        var items = await ProjectList(q
+        var rows = await ProjectList(q
                 .ApplySort(query, Sortable, qq => qq.OrderByDescending(b => b.CreatedAt))
                 .Skip((query.Page - 1) * query.PageSize)
                 .Take(query.PageSize))
             .ToListAsync(cancellationToken);
 
+        var items = rows.Select(ToListItem).ToList();
+
         return new PaginatedResult<BookingListItemResponse>(items, totalCount, query.Page, query.PageSize);
     }
 
+    private sealed record BookingListItemProjection(
+        Guid Id,
+        string BookingReference,
+        string GuestName,
+        string? GuestEmail,
+        string? GuestPhone,
+        DateOnly CheckInDate,
+        DateOnly CheckOutDate,
+        DateTime CheckInAt,
+        DateTime CheckOutAt,
+        DateTime? ActualCheckInAt,
+        DateTime? ActualCheckOutAt,
+        string Status,
+        string PaymentStatus,
+        string Source,
+        string? CreatedByName,
+        decimal TotalAmount,
+        decimal BalanceDue);
+
     /// <summary>
     /// Shared list projection used by every booking list. It also computes <c>balanceDue</c> (7l)
-    /// as "TotalAmount − Σ Paid payments" in SQL so the client never derives the balance.
+    /// as "TotalAmount − Σ Paid payments" in SQL so the client never derives the balance. The
+    /// Lagos-local time strings are derived in memory by <see cref="ToListItem"/>.
     /// </summary>
-    private IQueryable<BookingListItemResponse> ProjectList(IQueryable<Booking> q) =>
-        q.Select(b => new BookingListItemResponse(
+    private IQueryable<BookingListItemProjection> ProjectList(IQueryable<Booking> q) =>
+        q.Select(b => new BookingListItemProjection(
             b.Id, b.BookingReference,
             b.Guest != null ? (b.Guest.FirstName + " " + b.Guest.LastName).Trim() : "",
             b.Guest != null ? b.Guest.Email : null,
             b.Guest != null ? b.Guest.PhoneNumber : null,
-            b.CheckInDate, b.CheckOutDate, b.Status.ToString(), b.PaymentStatus.ToString(), b.Source.ToString(),
+            b.CheckInDate, b.CheckOutDate, b.CheckInAt, b.CheckOutAt, b.ActualCheckInAt, b.ActualCheckOutAt,
+            b.Status.ToString(), b.PaymentStatus.ToString(), b.Source.ToString(),
             b.CreatedByUserId == null ? null : db.Users.Where(u => u.Id == b.CreatedByUserId)
                 .Select(u => ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim()).FirstOrDefault(),
             b.TotalAmount,
             b.TotalAmount - (db.Payments.Where(p => p.BookingId == b.Id && p.Status == PaymentStatus.Paid)
                 .Sum(p => (decimal?)p.Amount) ?? 0m)));
+
+    private BookingListItemResponse ToListItem(BookingListItemProjection p)
+    {
+        var offset = LagosOffset();
+        return new BookingListItemResponse(
+            p.Id, p.BookingReference, p.GuestName, p.GuestEmail, p.GuestPhone,
+            p.CheckInDate, p.CheckOutDate,
+            StayFormat.LocalTime(p.CheckInAt, offset), StayFormat.LocalTime(p.CheckOutAt, offset),
+            StayFormat.Iso(p.CheckInAt, offset), StayFormat.Iso(p.CheckOutAt, offset),
+            p.ActualCheckInAt is null ? null : StayFormat.Iso(p.ActualCheckInAt.Value, offset),
+            p.ActualCheckOutAt is null ? null : StayFormat.Iso(p.ActualCheckOutAt.Value, offset),
+            p.Status, p.PaymentStatus, p.Source, p.CreatedByName, p.TotalAmount, p.BalanceDue);
+    }
 
     public async Task<Result<BookingDetailResponse>> GetDetailAsync(Guid id, CancellationToken cancellationToken)
     {
@@ -1033,16 +1083,45 @@ public class BookingService(
             .Select(ra => ra.RoomId)
             .ToListAsync(cancellationToken);
 
-        // A room cannot be assigned to two overlapping live bookings. Look at the rooms already
-        // held by another Confirmed/CheckedIn booking whose dates overlap this booking's stay.
-        var conflictingRoomIds = await db.RoomAssignments
-            .Where(ra => roomIds.Contains(ra.RoomId) && ra.ReleasedAt == null)
-            .Join(db.Bookings.Where(b => b.Id != id
-                    && (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
-                    && b.CheckInDate < booking.CheckOutDate && b.CheckOutDate > booking.CheckInDate),
-                ra => ra.BookingId, b => b.Id, (ra, b) => ra.RoomId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
+        // v1.12 (BR-007): a room is a hard conflict when another counted stay occupies it over
+        // this booking's window (extended by the turnaround). Every conflicted room is reported
+        // so reception can pick an alternative in one round-trip.
+        var stay = await stays.FromBookingAsync(booking, cancellationToken);
+        var conflictsFound = await conflicts.FindRoomConflictsAsync(
+            roomIds, id, stay.CheckInAt, stay.CheckOutAt, stay.Policy.TurnaroundMinutes, cancellationToken);
+        if (conflictsFound.Count > 0)
+        {
+            var errors = conflictsFound
+                .Select(c => new RoomConflictResponse(
+                    c.RoomId, c.RoomNumber, c.OccupiedUntil, c.OccupantGuestName, c.OccupantBookingReference, stay.CheckInAt))
+                .ToList();
+            return Error.Conflict("room.occupied_until",
+                "One or more rooms are still occupied over the requested stay.")
+                .WithExtensions(new Dictionary<string, object?> { ["errors"] = errors });
+        }
+
+        // v1.12: no interval conflict, but a room may not be free right now (a guest is still in
+        // house). Assigning it anyway requires acknowledgeLateAvailability = true.
+        if (!request.AcknowledgeLateAvailability)
+        {
+            LateAvailability? late = null;
+            foreach (var roomId in roomIds)
+            {
+                var candidate = await conflicts.FindLateAvailabilityAsync(roomId, id, clock.UtcNow, cancellationToken);
+                if (candidate is not null && (late is null || candidate.AvailableFrom < late.AvailableFrom))
+                    late = candidate;
+            }
+
+            if (late is not null)
+                return Error.Conflict("room.available_later",
+                    $"Room {late.RoomNumber} is not free right now but will be available from {late.AvailableFrom:yyyy-MM-dd HH:mm} UTC.")
+                    .WithExtensions(new Dictionary<string, object?>
+                    {
+                        ["roomId"] = late.RoomId,
+                        ["roomNumber"] = late.RoomNumber,
+                        ["availableFrom"] = late.AvailableFrom
+                    });
+        }
 
         var perLineCount = new Dictionary<Guid, int>();
         foreach (var assignment in assignments)
@@ -1055,8 +1134,6 @@ public class BookingService(
                 return Error.Validation("booking.wrong_roomtype", $"Room {room.RoomNumber} does not belong to the booked room type");
             if (!room.IsActive || room.Status is RoomStatus.Maintenance or RoomStatus.Inactive)
                 return Error.Conflict("booking.room_unavailable", $"Room {room.RoomNumber} is not available");
-            if (conflictingRoomIds.Contains(assignment.RoomId))
-                return Error.Conflict("booking.room_unavailable", $"Room {room.RoomNumber} is already booked for these dates");
             if (alreadyAssigned.Contains(assignment.RoomId))
                 return Error.Conflict("booking.room_already_assigned", $"Room {room.RoomNumber} is already assigned to this booking");
 
@@ -1080,7 +1157,9 @@ public class BookingService(
         await db.SaveChangesAsync(cancellationToken);
 
         await activityLogger.LogAsync(staffUserId, "booking.rooms_assigned", "Booking", booking.Id,
-            $"Assigned {assignments.Count} room(s)", cancellationToken);
+            $"Assigned {assignments.Count} room(s)"
+            + (request.AcknowledgeLateAvailability ? " (late availability acknowledged)" : string.Empty),
+            cancellationToken);
 
         return await MapAsync(booking.Id, cancellationToken);
     }
@@ -1093,9 +1172,6 @@ public class BookingService(
 
         if (booking.Status != BookingStatus.Confirmed)
             return Error.Conflict("booking.invalid_state", $"Only confirmed bookings can be checked in (current: {booking.Status})");
-
-        if (booking.CheckInDate > clock.Today)
-            return Error.Conflict("booking.not_yet_arrivable", "Booking check-in date has not been reached");
 
         // 7f: optional gate requiring full payment before check-in (off by default).
         if (await BoolSettingAsync("RequireFullPaymentAtCheckIn", settings.RequireFullPaymentAtCheckIn, cancellationToken))
@@ -1127,14 +1203,41 @@ public class BookingService(
         var roomIds = assignments.Select(a => a.RoomId).ToList();
         var rooms = await db.Rooms.Where(r => roomIds.Contains(r.Id)).ToListAsync(cancellationToken);
 
+        // v1.12 (BR-008): every assigned room must be physically free right now. Early arrival is
+        // allowed when nothing conflicts from now until this booking's scheduled check-out.
+        var stay = await stays.FromBookingAsync(booking, cancellationToken);
+        var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+
+        var blocked = new List<Room>();
         foreach (var room in rooms)
         {
-            if (!room.IsActive || room.Status is RoomStatus.Maintenance or RoomStatus.Inactive)
-                return Error.Conflict("booking.room_unavailable", $"Room {room.RoomNumber} is not available for check-in");
-            room.Status = RoomStatus.Occupied;
+            if (!await conflicts.IsRoomPhysicallyFreeNowAsync(room.Id, cancellationToken))
+                blocked.Add(room);
         }
 
+        if (blocked.Count > 0)
+        {
+            var details = await conflicts.FindRoomConflictsAsync(
+                roomIds, id, nowUtc, stay.CheckOutAt, stay.Policy.TurnaroundMinutes, cancellationToken);
+            var errors = blocked
+                .Select(room =>
+                {
+                    var c = details.FirstOrDefault(d => d.RoomId == room.Id);
+                    return new RoomConflictResponse(
+                        room.Id, room.RoomNumber, c?.OccupiedUntil ?? nowUtc,
+                        c?.OccupantGuestName, c?.OccupantBookingReference, nowUtc);
+                })
+                .ToList();
+            return Error.Conflict("room.occupied_until",
+                "One or more rooms are still occupied.")
+                .WithExtensions(new Dictionary<string, object?> { ["errors"] = errors });
+        }
+
+        foreach (var room in rooms)
+            room.Status = RoomStatus.Occupied;
+
         booking.Status = BookingStatus.CheckedIn;
+        booking.ActualCheckInAt = nowUtc;
         booking.ConcurrencyToken = Guid.NewGuid().ToByteArray();
 
         // BR-036: only notify a guest who has an account.
@@ -1163,7 +1266,11 @@ public class BookingService(
                 booking.BookingReference,
                 $"{booking.Guest.FirstName} {booking.Guest.LastName}".Trim(),
                 rooms.Select(r => r.RoomNumber).ToList(),
-                clock.UtcNow));
+                booking.CheckInDate,
+                booking.CheckInLocalTime(LagosOffset()),
+                booking.CheckOutDate,
+                booking.CheckOutLocalTime(LagosOffset()),
+                nowUtc));
             _ = emailSender.SendAsync(email, subject, html, text, CancellationToken.None);
         }
 
@@ -1171,7 +1278,7 @@ public class BookingService(
             booking.Id,
             booking.BookingReference,
             booking.Status.ToString(),
-            clock.UtcNow,
+            nowUtc,
             rooms.Select(r => r.RoomNumber).ToList());
     }
 
@@ -1196,7 +1303,7 @@ public class BookingService(
         }
 
         var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
-        var scheduledUtc = await ScheduledCheckOutUtcAsync(booking, cancellationToken);
+        var scheduledUtc = booking.CheckOutAt;
         var isEarly = nowUtc < scheduledUtc;
 
         string? earlyReason = null;
@@ -1238,7 +1345,7 @@ public class BookingService(
         }
 
         booking.Status = BookingStatus.CheckedOut;
-        booking.ActualCheckOutAt = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+        booking.ActualCheckOutAt = nowUtc;
         booking.EarlyCheckOutReason = earlyReason;
         booking.EarlyCheckOutNotes = earlyNotes;
         booking.ConcurrencyToken = Guid.NewGuid().ToByteArray();
@@ -1273,7 +1380,11 @@ public class BookingService(
                 booking.BookingReference,
                 $"{booking.Guest.FirstName} {booking.Guest.LastName}".Trim(),
                 rooms.Select(r => r.RoomNumber).ToList(),
-                clock.UtcNow));
+                booking.CheckInDate,
+                booking.CheckInLocalTime(LagosOffset()),
+                booking.CheckOutDate,
+                booking.CheckOutLocalTime(LagosOffset()),
+                nowUtc));
             _ = emailSender.SendAsync(email, subject, html, text, CancellationToken.None);
         }
 
@@ -1281,29 +1392,11 @@ public class BookingService(
             booking.Id,
             booking.BookingReference,
             booking.Status.ToString(),
-            clock.UtcNow,
+            nowUtc,
             rooms.Select(r => r.RoomNumber).ToList(),
             isEarly,
             scheduledUtc,
             booking.ActualCheckOutAt.Value);
-    }
-
-    /// <summary>The leading edge of the check-out date (CheckOutDate at the configured check-out
-    /// time, DB <c>Setting CheckOutTime</c> — else <c>Settings:CheckOutTime</c>, default 12:00 —
-    /// in Africa/Lagos), expressed in UTC. Performing a check-out before this moment is early.</summary>
-    private async Task<DateTime> ScheduledCheckOutUtcAsync(Booking booking, CancellationToken cancellationToken)
-    {
-        var checkOutTime = await CheckOutTimeAsync(cancellationToken);
-        var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
-        var lagosOffset = businessClock.ConvertFromUtc(new DateTimeOffset(nowUtc)).Offset;
-        return new DateTimeOffset(booking.CheckOutDate.ToDateTime(checkOutTime), lagosOffset).UtcDateTime;
-    }
-
-    /// <summary>The admin-editable check-out time (default 12:00) used to decide early check-out.</summary>
-    private async Task<TimeOnly> CheckOutTimeAsync(CancellationToken cancellationToken)
-    {
-        var stored = await db.Settings.FirstOrDefaultAsync(s => s.Key == "CheckOutTime", cancellationToken);
-        return stored is not null && TimeOnly.TryParse(stored.Value, out var parsed) ? parsed : settings.CheckOutTime;
     }
 
     public async Task<Result<ChangeRoomTypeResponse>> ChangeRoomTypeAsync(
@@ -1354,14 +1447,9 @@ public class BookingService(
         var capacity = await db.Rooms.CountAsync(
             r => r.RoomTypeId == newType.Id && r.IsActive && r.Status != RoomStatus.Maintenance && r.Status != RoomStatus.Inactive,
             cancellationToken);
-        var heldByOthers = await db.BookingRoomTypes
-            .Where(brt => brt.RoomTypeId == newType.Id && brt.BookingId != id)
-            .Join(db.Bookings.Where(b =>
-                    (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
-                    && b.CheckInDate < booking.CheckOutDate
-                    && b.CheckOutDate > booking.CheckInDate),
-                brt => brt.BookingId, b => b.Id, (brt, b) => brt.Quantity)
-            .SumAsync(q => (int?)q, cancellationToken) ?? 0;
+        var stay = await stays.FromBookingAsync(booking, cancellationToken);
+        var heldByOthers = await conflicts.CountOverlappingQuantityAsync(
+            newType.Id, id, stay.CheckInAt, stay.CheckOutAt, stay.Policy.TurnaroundMinutes, cancellationToken);
         var ownOnNewType = lines.Where(l => l.RoomTypeId == newType.Id).Sum(l => l.Quantity);
         var free = capacity - heldByOthers - ownOnNewType;
         if (free < request.Quantity)
@@ -1457,7 +1545,9 @@ public class BookingService(
                     booking.BookingReference,
                     $"{booking.Guest.FirstName} {booking.Guest.LastName}".Trim(),
                     booking.CheckInDate,
+                    booking.CheckInLocalTime(LagosOffset()),
                     booking.CheckOutDate,
+                    booking.CheckOutLocalTime(LagosOffset()),
                     booking.Nights,
                     roomsForEmail,
                     booking.TotalAmount));
@@ -1512,18 +1602,36 @@ public class BookingService(
         if (alreadyAssigned)
             return Error.Conflict("booking.room_unavailable", $"Room {newRoom.RoomNumber} is already assigned to this booking");
 
-        // BR-023: the target room must be free for the whole stay.
-        var conflicting = await db.RoomAssignments
-            .Where(ra => ra.RoomId == request.NewRoomId && ra.ReleasedAt == null && ra.Id != assignment.Id)
-            .Join(db.Bookings.Where(b =>
-                    b.Id != id
-                    && (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
-                    && b.CheckInDate < booking.CheckOutDate
-                    && b.CheckOutDate > booking.CheckInDate),
-                ra => ra.BookingId, b => b.Id, (ra, b) => ra.Id)
-            .AnyAsync(cancellationToken);
-        if (conflicting)
-            return Error.Conflict("booking.room_unavailable", $"Room {newRoom.RoomNumber} is already booked for these dates");
+        // BR-023 / v1.12: the target room must be free for the whole stay (turnaround-aware).
+        var stay = await stays.FromBookingAsync(booking, cancellationToken);
+        var conflictsFound = await conflicts.FindRoomConflictsAsync(
+            new[] { request.NewRoomId }, id, stay.CheckInAt, stay.CheckOutAt, stay.Policy.TurnaroundMinutes, cancellationToken);
+        if (conflictsFound.Count > 0)
+        {
+            var errors = conflictsFound
+                .Select(c => new RoomConflictResponse(
+                    c.RoomId, c.RoomNumber, c.OccupiedUntil, c.OccupantGuestName, c.OccupantBookingReference, stay.CheckInAt))
+                .ToList();
+            return Error.Conflict("room.occupied_until",
+                $"Room {newRoom.RoomNumber} is still occupied over the requested stay.")
+                .WithExtensions(new Dictionary<string, object?> { ["errors"] = errors });
+        }
+
+        if (!request.AcknowledgeLateAvailability)
+        {
+            var late = await conflicts.FindLateAvailabilityAsync(request.NewRoomId, id, clock.UtcNow, cancellationToken);
+            if (late is not null)
+            {
+                return Error.Conflict("room.available_later",
+                    $"Room {late.RoomNumber} is not free right now but will be available from {late.AvailableFrom:yyyy-MM-dd HH:mm} UTC.")
+                    .WithExtensions(new Dictionary<string, object?>
+                    {
+                        ["roomId"] = late.RoomId,
+                        ["roomNumber"] = late.RoomNumber,
+                        ["availableFrom"] = late.AvailableFrom
+                    });
+            }
+        }
 
         var oldRoom = await db.Rooms.FirstOrDefaultAsync(r => r.Id == assignment.RoomId, cancellationToken);
 
@@ -1548,7 +1656,8 @@ public class BookingService(
 
         await activityLogger.LogAsync(staffUserId, "booking.room_reassigned", "Booking", booking.Id,
             $"Reassigned room {oldRoom?.RoomNumber} to {newRoom.RoomNumber}"
-            + (string.IsNullOrWhiteSpace(request.Reason) ? string.Empty : $" ({request.Reason.Trim()})"),
+            + (string.IsNullOrWhiteSpace(request.Reason) ? string.Empty : $" ({request.Reason.Trim()})")
+            + (request.AcknowledgeLateAvailability ? " (late availability acknowledged)" : string.Empty),
             cancellationToken);
 
         return await MapAsync(booking.Id, cancellationToken);
@@ -1612,6 +1721,7 @@ public class BookingService(
                 createdByName = null;
         }
 
+        var offset = LagosOffset();
         return new BookingDetailResponse(
             booking.Id,
             booking.BookingReference,
@@ -1620,6 +1730,12 @@ public class BookingService(
             booking.Guest?.PhoneNumber,
             booking.CheckInDate,
             booking.CheckOutDate,
+            StayFormat.LocalTime(booking.CheckInAt, offset),
+            StayFormat.LocalTime(booking.CheckOutAt, offset),
+            StayFormat.Iso(booking.CheckInAt, offset),
+            StayFormat.Iso(booking.CheckOutAt, offset),
+            booking.ActualCheckInAt is null ? null : StayFormat.Iso(booking.ActualCheckInAt.Value, offset),
+            booking.ActualCheckOutAt is null ? null : StayFormat.Iso(booking.ActualCheckOutAt.Value, offset),
             booking.Nights,
             booking.Adults,
             booking.Children,

@@ -4,7 +4,9 @@ public sealed record BookingCancellationModel(
     string BookingReference,
     string GuestName,
     DateOnly CheckInDate,
+    TimeOnly CheckInTime,
     DateOnly CheckOutDate,
+    TimeOnly CheckOutTime,
     string? Reason,
     decimal? RefundedAmount);
 
@@ -26,8 +28,8 @@ public static class BookingCancellationEmail
                 <div style="font-size:22px;font-weight:700;color:#4A2C1A;">{System.Net.WebUtility.HtmlEncode(model.BookingReference)}</div>
               </td></tr>
             </table>
-            <p style="margin:0 0 6px;"><strong>Check-in:</strong> {model.CheckInDate:yyyy-MM-dd}</p>
-            <p style="margin:0 0 6px;"><strong>Check-out:</strong> {model.CheckOutDate:yyyy-MM-dd}</p>
+            <p style="margin:0 0 6px;">{Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-in", model.CheckInDate, model.CheckInTime, true)}</p>
+            <p style="margin:0 0 6px;">{Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-out", model.CheckOutDate, model.CheckOutTime, false)}</p>
             {(refund is not null ? $"<p style=\"margin:12px 0 0;\"><strong>Refunded:</strong> NGN {refund:N2}</p>" : "")}
             {(reason is null ? "" : $"<p style=\"margin:12px 0 0;\"><strong>Reason:</strong> {reason}</p>")}
             """;
@@ -35,8 +37,8 @@ public static class BookingCancellationEmail
         var text = EmailLayout.PlainText("Booking cancelled",
             $"Booking reference: {model.BookingReference}",
             $"Guest: {model.GuestName}",
-            $"Check-in: {model.CheckInDate:yyyy-MM-dd}",
-            $"Check-out: {model.CheckOutDate:yyyy-MM-dd}",
+            Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-in", model.CheckInDate, model.CheckInTime, true),
+            Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-out", model.CheckOutDate, model.CheckOutTime, false),
             refund is not null ? $"Refunded: NGN {refund:N2}" : "",
             reason is null ? "" : $"Reason: {model.Reason}");
 
