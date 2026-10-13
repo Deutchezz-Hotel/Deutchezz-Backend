@@ -2,7 +2,9 @@ namespace Deutchezz.Application.Availability;
 
 public record AvailabilitySearchRequest(
     DateOnly CheckInDate,
+    string? CheckInTime,
     DateOnly CheckOutDate,
+    string? CheckOutTime,
     int Adults,
     int Children,
     int Rooms);
@@ -16,4 +18,11 @@ public record AvailableRoomTypeResponse(
     int Booked,
     int Available);
 
-public record AvailabilityResponse(DateOnly CheckInDate, DateOnly CheckOutDate, List<AvailableRoomTypeResponse> RoomTypes);
+public record AvailabilityResponse(
+    DateOnly CheckInDate,
+    string CheckInTime,
+    DateOnly CheckOutDate,
+    string CheckOutTime,
+    string CheckInAt,
+    string CheckOutAt,
+    List<AvailableRoomTypeResponse> RoomTypes);

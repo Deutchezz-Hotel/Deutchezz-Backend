@@ -19,11 +19,21 @@ public record DashboardResponse(
     int TodayCheckOuts,
     int ActiveBookings,
     decimal RevenueToday,
-    int OccupancyPercentage);
+    int OccupancyPercentage,
+    int AvailableNow,
+    int InHouse,
+    int OverdueCheckOuts,
+    int RoomsFreeingToday,
+    IReadOnlyList<BookingStatusCount> BookingsByStatus,
+    IReadOnlyList<DailyRevenue> RevenueTrend);
 
 public record ReportFilterRequest(DateOnly? From, DateOnly? To);
 
 public record DailyMetric(DateOnly Date, int Bookings, decimal Revenue);
+
+public record DailyRevenue(DateOnly Date, decimal Revenue);
+
+public record BookingStatusCount(string Status, int Count);
 
 public record ReportResponse(
     DateOnly From,
@@ -50,12 +60,19 @@ public class ReportsService(IAppDbContext db, IBusinessClock clock) : IReportsSe
     public async Task<Result<DashboardResponse>> GetDashboardAsync(CancellationToken cancellationToken)
     {
         var today = clock.Today;
+        var nowUtc = clock.UtcNow.UtcDateTime;
+        var lagosOffset = clock.ConvertFromUtc(clock.UtcNow).Offset;
 
-        var totalRooms = await db.Rooms.CountAsync(r => !r.IsDeleted, cancellationToken);
-        var available = await db.Rooms.CountAsync(r => r.Status == RoomStatus.Available, cancellationToken);
-        var occupied = await db.Rooms.CountAsync(r => r.Status == RoomStatus.Occupied, cancellationToken);
-        var maintenance = await db.Rooms.CountAsync(r => r.Status == RoomStatus.Maintenance, cancellationToken);
-        var inactive = await db.Rooms.CountAsync(r => r.Status == RoomStatus.Inactive, cancellationToken);
+        var rooms = await db.Rooms
+            .Where(r => !r.IsDeleted)
+            .Select(r => new { r.Id, r.Status })
+            .ToListAsync(cancellationToken);
+
+        var totalRooms = rooms.Count;
+        var available = rooms.Count(r => r.Status == RoomStatus.Available);
+        var occupied = rooms.Count(r => r.Status == RoomStatus.Occupied);
+        var maintenance = rooms.Count(r => r.Status == RoomStatus.Maintenance);
+        var inactive = rooms.Count(r => r.Status == RoomStatus.Inactive);
 
         var todayStart = today.UtcStartOfDay();
         var tomorrow = today.AddDays(1).UtcStartOfDay();
@@ -68,21 +85,97 @@ public class ReportsService(IAppDbContext db, IBusinessClock clock) : IReportsSe
             cancellationToken);
 
         var todayCheckOuts = await db.Bookings.CountAsync(
-            b => b.CheckOutDate == today && b.Status == BookingStatus.CheckedOut, cancellationToken);
+            b => b.CheckOutDate == today && (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn),
+            cancellationToken);
 
         var activeBookings = await db.Bookings.CountAsync(
-            b => b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn, cancellationToken);
+            b => b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn,
+            cancellationToken);
 
-        var revenueToday = await db.Payments
-            .Where(p => p.Status == PaymentStatus.Paid && p.PaidAt != null && p.PaidAt >= todayStart && p.PaidAt < tomorrow)
-            .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
+        var activity = await db.RoomAssignments
+            .Where(ra => ra.ReleasedAt == null)
+            .Join(db.Bookings.Where(b =>
+                    b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn),
+                ra => ra.BookingId, b => b.Id,
+                (ra, b) => new
+                {
+                    ra.RoomId,
+                    b.Id,
+                    b.Status,
+                    b.CheckInAt,
+                    b.CheckOutAt,
+                    b.ActualCheckOutAt
+                })
+            .ToListAsync(cancellationToken);
 
-        var operationalRooms = Math.Max(1, totalRooms - inactive);
-        var occupancyPercentage = (int)Math.Round(occupied * 100m / operationalRooms, MidpointRounding.AwayFromZero);
+        var coveringNow = activity
+            .Where(a => a.CheckInAt <= nowUtc
+                && (a.CheckOutAt > nowUtc || (a.Status == BookingStatus.CheckedIn && a.ActualCheckOutAt == null)))
+            .ToList();
+
+        var occupiedNowRoomIds = coveringNow.Select(a => a.RoomId)
+            .Union(rooms.Where(r => r.Status == RoomStatus.Occupied).Select(r => r.Id))
+            .Distinct()
+            .ToList();
+
+        var inHouse = activity
+            .Where(a => a.Status == BookingStatus.CheckedIn && a.ActualCheckOutAt == null)
+            .Select(a => a.Id).Distinct().Count();
+
+        var overdueCheckOuts = activity
+            .Where(a => a.Status == BookingStatus.CheckedIn && a.ActualCheckOutAt == null && a.CheckOutAt < nowUtc)
+            .Select(a => a.Id).Distinct().Count();
+
+        var roomsFreeingToday = coveringNow
+            .Where(a => clock.ToLocalDate(new DateTimeOffset(DateTime.SpecifyKind(a.CheckOutAt, DateTimeKind.Utc))) == today)
+            .Select(a => a.RoomId).Distinct().Count();
+
+        var operationalRooms = Math.Max(0, totalRooms - maintenance - inactive);
+        var occupiedNow = occupiedNowRoomIds.Count;
+        var availableNow = Math.Max(0, operationalRooms - occupiedNow);
+        var occupancyPercentage = operationalRooms <= 0 ? 0 :
+            (int)Math.Round(occupiedNow * 100m / operationalRooms, MidpointRounding.AwayFromZero);
+
+        var statusCounts = await db.Bookings
+            .GroupBy(b => b.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var bookingsByStatus = statusCounts
+            .OrderBy(x => x.Status)
+            .Select(x => new BookingStatusCount(x.Status.ToString(), x.Count))
+            .ToList();
+
+        var trendFrom = today.AddDays(-29);
+        var trendStart = new DateTimeOffset(trendFrom.ToDateTime(TimeOnly.MinValue), lagosOffset).UtcDateTime;
+        var trendEnd = new DateTimeOffset(today.AddDays(1).ToDateTime(TimeOnly.MinValue), lagosOffset).UtcDateTime;
+
+        var payments = await db.Payments
+            .Where(p => p.Status == PaymentStatus.Paid && p.PaidAt != null && p.PaidAt >= trendStart && p.PaidAt < trendEnd)
+            .Select(p => new { p.PaidAt, p.Amount })
+            .ToListAsync(cancellationToken);
+
+        var revenueByDay = payments
+            .GroupBy(p => clock.ToLocalDate(
+                new DateTimeOffset(DateTime.SpecifyKind(p.PaidAt!.Value, DateTimeKind.Utc))))
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+
+        var revenueTrend = Enumerable.Range(0, 30)
+            .Select(i => trendFrom.AddDays(i))
+            .Select(d => new DailyRevenue(d, revenueByDay.GetValueOrDefault(d, 0m)))
+            .ToList();
+
+        var revenueToday = payments
+            .Where(p => clock.ToLocalDate(
+                new DateTimeOffset(DateTime.SpecifyKind(p.PaidAt!.Value, DateTimeKind.Utc))) == today)
+            .Sum(p => p.Amount);
 
         return new DashboardResponse(
             totalRooms, available, occupied, maintenance, inactive,
-            todayBookings, todayCheckIns, todayCheckOuts, activeBookings, revenueToday, occupancyPercentage);
+            todayBookings, todayCheckIns, todayCheckOuts, activeBookings,
+            revenueToday, occupancyPercentage,
+            availableNow, inHouse, overdueCheckOuts, roomsFreeingToday,
+            bookingsByStatus, revenueTrend);
     }
 
     public async Task<Result<ReportResponse>> GetReportAsync(ReportFilterRequest request, CancellationToken cancellationToken)

@@ -4,7 +4,9 @@ public sealed record BookingUpdatedModel(
     string BookingReference,
     string GuestName,
     DateOnly CheckInDate,
+    TimeOnly CheckInTime,
     DateOnly CheckOutDate,
+    TimeOnly CheckOutTime,
     int Nights,
     IReadOnlyList<BookingConfirmationRoom> Rooms,
     decimal TotalAmount);
@@ -32,8 +34,8 @@ public static class BookingUpdatedEmail
               </tr>
             </table>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18px;">
-              <tr><td style="padding:6px 0;"><strong style="color:#4A2C1A;">Check-in:</strong> {model.CheckInDate:yyyy-MM-dd}</td></tr>
-              <tr><td style="padding:6px 0;"><strong style="color:#4A2C1A;">Check-out:</strong> {model.CheckOutDate:yyyy-MM-dd}</td></tr>
+              <tr><td style="padding:6px 0;">{Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-in", model.CheckInDate, model.CheckInTime, true)}</td></tr>
+              <tr><td style="padding:6px 0;">{Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-out", model.CheckOutDate, model.CheckOutTime, false)}</td></tr>
               <tr><td style="padding:6px 0;"><strong style="color:#4A2C1A;">Nights:</strong> {model.Nights}</td></tr>
             </table>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:18px;">
@@ -48,8 +50,8 @@ public static class BookingUpdatedEmail
         var text = EmailLayout.PlainText("Booking updated",
             $"Booking reference: {model.BookingReference}",
             $"Guest: {model.GuestName}",
-            $"Check-in: {model.CheckInDate:yyyy-MM-dd}",
-            $"Check-out: {model.CheckOutDate:yyyy-MM-dd}",
+            Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-in", model.CheckInDate, model.CheckInTime, true),
+            Deutchezz.Application.Stays.StayFormat.ScheduleLine("Check-out", model.CheckOutDate, model.CheckOutTime, false),
             $"Nights: {model.Nights}",
             $"Rooms: {string.Join(", ", model.Rooms.Select(r => $"{r.RoomTypeName} x{r.Quantity} @ {r.RatePerNight:N0}/night"))}",
             $"Total: NGN {model.TotalAmount:N2}");

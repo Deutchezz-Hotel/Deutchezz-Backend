@@ -1,20 +1,30 @@
+using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Data;
+using Deutchezz.Application.Stays;
 using Deutchezz.Domain.Common;
 using Deutchezz.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Deutchezz.Application.Availability;
 
-public class AvailabilityService(IAppDbContext db) : IAvailabilityService
+public class AvailabilityService(
+    IAppDbContext db, IStayPolicyService stays, IStayConflictService conflicts, IBusinessClock businessClock)
+    : IAvailabilityService
 {
     public async Task<Result<AvailabilityResponse>> SearchAsync(AvailabilitySearchRequest request, CancellationToken cancellationToken)
     {
-        if (request.CheckOutDate <= request.CheckInDate)
-            return Error.Validation("availability.invalid_range", "Check-out must be after check-in");
         if (request.Rooms < 1)
             return Error.Validation("availability.invalid_rooms", "At least one room is required");
         if (request.Adults + request.Children < 1)
             return Error.Validation("availability.invalid_guests", "At least one guest is required");
+
+        var stay = await stays.ResolveAsync(
+            request.CheckInDate, request.CheckInTime, request.CheckOutDate, request.CheckOutTime, false, cancellationToken);
+        if (stay.IsFailure)
+            return stay.Error.Code == "stay.invalid_range"
+                ? Error.Validation("availability.invalid_range", stay.Error.Description)
+                : stay.Error;
+        var s = stay.Value;
 
         var totalGuests = request.Adults + request.Children;
 
@@ -35,14 +45,8 @@ public class AvailabilityService(IAppDbContext db) : IAvailabilityService
                     && r.Status != RoomStatus.Maintenance && r.Status != RoomStatus.Inactive,
                 cancellationToken);
 
-            var booked = await db.BookingRoomTypes
-                .Where(brt => brt.RoomTypeId == roomType.Id)
-                .Join(db.Bookings.Where(b => (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
-                        && b.CheckInDate < request.CheckOutDate && b.CheckOutDate > request.CheckInDate),
-                    brt => brt.BookingId,
-                    b => b.Id,
-                    (brt, b) => brt.Quantity)
-                .SumAsync(q => (int?)q, cancellationToken) ?? 0;
+            var booked = await conflicts.CountOverlappingQuantityAsync(
+                roomType.Id, null, s.CheckInAt, s.CheckOutAt, s.Policy.TurnaroundMinutes, cancellationToken);
 
             var available = Math.Max(0, capacity - booked);
             if (available < request.Rooms)
@@ -53,6 +57,11 @@ public class AvailabilityService(IAppDbContext db) : IAvailabilityService
                 capacity, booked, available));
         }
 
-        return new AvailabilityResponse(request.CheckInDate, request.CheckOutDate, result);
+        var lagosOffset = businessClock.ConvertFromUtc(businessClock.UtcNow).Offset;
+        return new AvailabilityResponse(
+            s.CheckInDate, Format(s.CheckInTime), s.CheckOutDate, Format(s.CheckOutTime),
+            StayFormat.Iso(s.CheckInAt, lagosOffset), StayFormat.Iso(s.CheckOutAt, lagosOffset), result);
     }
+
+    private static string Format(TimeOnly time) => time.ToString("HH:mm");
 }
