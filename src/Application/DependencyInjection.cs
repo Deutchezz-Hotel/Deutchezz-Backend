@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<IStayConflictService, StayConflictService>();
         services.AddHostedService<PendingBookingExpiryWorker>();
         services.AddHostedService<PendingRegistrationCleanupWorker>();
+        services.AddHostedService<CancelledBookingPurgeWorker>();
         return services;
     }
 }

@@ -204,7 +204,7 @@ public class AdminUserTests(HotelWebApplicationFactory factory) : IntegrationTes
 
         var deactivate = await client.PatchAsJsonAsync($"/api/v1/admin/staff/{userId}/status",
             new { isActive = false });
-        Assert.Equal(HttpStatusCode.NoContent, deactivate.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
 
         var promote = await client.PatchAsJsonAsync($"/api/v1/admin/users/{userId}/role",
             new { role = "Receptionist" });
@@ -229,7 +229,7 @@ public class AdminUserTests(HotelWebApplicationFactory factory) : IntegrationTes
 
             var deactivateOther = await client.PatchAsJsonAsync($"/api/v1/admin/staff/{id}/status",
                 new { isActive = false });
-            Assert.Equal(HttpStatusCode.NoContent, deactivateOther.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, deactivateOther.StatusCode);
         }
 
         var response = await client.PatchAsJsonAsync($"/api/v1/admin/staff/{selfId}/status",

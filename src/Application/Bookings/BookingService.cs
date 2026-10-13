@@ -27,7 +27,8 @@ public class BookingService(
     ISettingsProvider settings,
     IStayPolicyService stays,
     IStayConflictService conflicts,
-    IOptions<EmailOptions> emailOptions) : IBookingService
+    IOptions<EmailOptions> emailOptions,
+    IOptions<BookingRetentionOptions> retention) : IBookingService
 {
     private const int MaxNights = 30;
 
@@ -45,6 +46,20 @@ public class BookingService(
         };
 
     private TimeSpan LagosOffset() => businessClock.ConvertFromUtc(businessClock.UtcNow).Offset;
+
+    /// <summary>
+    /// Defensive guard for the legacy <c>-infinity</c> sentinel (see the
+    /// <c>FixLegacyStayInstants</c> migration): a stay instant that is unset (year &lt;= 1) is
+    /// resolved from its scheduled date and the historical 14:00/12:00 Lagos defaults so the API
+    /// can never render the bogus "01:00" that <c>MinValue + Lagos offset</c> produced.
+    /// </summary>
+    private DateTime ResolveInstant(DateTime instant, DateOnly date, TimeOnly fallback, TimeSpan offset)
+    {
+        if (instant.Year > 1)
+            return instant;
+
+        return new DateTimeOffset(date.ToDateTime(fallback), offset).UtcDateTime;
+    }
 
     public async Task<Result<CreateBookingResponse>> CreateAsync(
         CreateBookingRequest request, Guid? userId, string idempotencyKey, CancellationToken cancellationToken)
@@ -691,6 +706,14 @@ public class BookingService(
         if (refundedAmount > 0)
             booking.PaymentStatus = PaymentStatus.Refunded;
 
+        // BR-018: a pre-check-in cancellation releases any live room assignments immediately so
+        // availability is freed; otherwise the rooms stay held by a cancelled booking.
+        var liveAssignments = await db.RoomAssignments
+            .Where(ra => ra.BookingId == booking.Id && ra.ReleasedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var assignment in liveAssignments)
+            assignment.ReleasedAt = clock.UtcNow;
+
         booking.Status = BookingStatus.Cancelled;
         booking.CancelledAt = clock.UtcNow;
         booking.CancellationReason = reason;
@@ -917,10 +940,25 @@ public class BookingService(
             q = q.Where(b => b.Status == BookingStatus.Confirmed && b.CheckInDate < today);
         }
 
+        // SoT 7n: same predicate the dashboard counts, so the card total always equals this list.
         if (query.OverdueCheckOuts)
         {
             var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
-            q = q.Where(b => b.Status == BookingStatus.CheckedIn && b.CheckOutAt < nowUtc);
+            q = BookingQueries.OverdueCheckOuts(q, nowUtc);
+        }
+
+        // Dashboard "Active bookings" card: bookings still in play (not cancelled/checked out).
+        if (query.ActiveOnly)
+            q = q.Where(b => b.Status == BookingStatus.Pending
+                || b.Status == BookingStatus.Confirmed
+                || b.Status == BookingStatus.CheckedIn);
+
+        // Dashboard "Rooms freeing today" card: stays scheduled to check out today.
+        if (query.CheckOutToday)
+        {
+            var today = businessClock.Today;
+            q = q.Where(b => b.CheckOutDate == today
+                && (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn));
         }
 
         if (!string.IsNullOrWhiteSpace(query.Reference))
@@ -1032,11 +1070,13 @@ public class BookingService(
     private BookingListItemResponse ToListItem(BookingListItemProjection p)
     {
         var offset = LagosOffset();
+        var checkInAt = ResolveInstant(p.CheckInAt, p.CheckInDate, new TimeOnly(14, 0), offset);
+        var checkOutAt = ResolveInstant(p.CheckOutAt, p.CheckOutDate, new TimeOnly(12, 0), offset);
         return new BookingListItemResponse(
             p.Id, p.BookingReference, p.GuestName, p.GuestEmail, p.GuestPhone,
             p.CheckInDate, p.CheckOutDate,
-            StayFormat.LocalTime(p.CheckInAt, offset), StayFormat.LocalTime(p.CheckOutAt, offset),
-            StayFormat.Iso(p.CheckInAt, offset), StayFormat.Iso(p.CheckOutAt, offset),
+            StayFormat.LocalTime(checkInAt, offset), StayFormat.LocalTime(checkOutAt, offset),
+            StayFormat.Iso(checkInAt, offset), StayFormat.Iso(checkOutAt, offset),
             p.ActualCheckInAt is null ? null : StayFormat.Iso(p.ActualCheckInAt.Value, offset),
             p.ActualCheckOutAt is null ? null : StayFormat.Iso(p.ActualCheckOutAt.Value, offset),
             p.Status, p.PaymentStatus, p.Source, p.CreatedByName, p.TotalAmount, p.BalanceDue);
@@ -1059,6 +1099,9 @@ public class BookingService(
 
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
+
+        if (BookingGuards.EnsureMutable(booking.Status) is { } cancelledAssign)
+            return cancelledAssign;
 
         if (booking.Status != BookingStatus.Confirmed)
             return Error.Conflict("booking.invalid_state", $"Rooms can only be assigned to confirmed bookings (current: {booking.Status})");
@@ -1169,6 +1212,9 @@ public class BookingService(
         var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
+
+        if (BookingGuards.EnsureMutable(booking.Status) is { } cancelledCheckIn)
+            return cancelledCheckIn;
 
         if (booking.Status != BookingStatus.Confirmed)
             return Error.Conflict("booking.invalid_state", $"Only confirmed bookings can be checked in (current: {booking.Status})");
@@ -1289,6 +1335,9 @@ public class BookingService(
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
 
+        if (BookingGuards.EnsureMutable(booking.Status) is { } cancelledCheckOut)
+            return cancelledCheckOut;
+
         if (booking.Status != BookingStatus.CheckedIn)
             return Error.Conflict("booking.invalid_state", $"Only checked-in bookings can be checked out (current: {booking.Status})");
 
@@ -1405,6 +1454,9 @@ public class BookingService(
         var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
+
+        if (BookingGuards.EnsureMutable(booking.Status) is { } cancelledChange)
+            return cancelledChange;
 
         if (booking.Status is not (BookingStatus.Pending or BookingStatus.Confirmed))
             return Error.Conflict("booking.invalid_state",
@@ -1569,6 +1621,9 @@ public class BookingService(
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
 
+        if (BookingGuards.EnsureMutable(booking.Status) is { } cancelledReassign)
+            return cancelledReassign;
+
         if (booking.Status is not (BookingStatus.Confirmed or BookingStatus.CheckedIn))
             return Error.Conflict("booking.invalid_state",
                 $"Rooms can only be reassigned before the guest departs (current: {booking.Status})");
@@ -1670,6 +1725,9 @@ public class BookingService(
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
 
+        if (BookingGuards.EnsureMutable(booking.Status) is { } cancelledUnassign)
+            return cancelledUnassign;
+
         if (booking.Status is not (BookingStatus.Pending or BookingStatus.Confirmed))
             return Error.Conflict("booking.invalid_state",
                 $"Rooms can only be unassigned before check-in (current: {booking.Status})");
@@ -1710,6 +1768,17 @@ public class BookingService(
             .Where(p => p.BookingId == id && p.Status == PaymentStatus.Paid)
             .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
 
+        // SoT 7n / BR-042: a cancelled booking without payments is auto-purged after the retention
+        // window; one with payments is exempt and flagged for a refund review.
+        var hasPayments = await db.Payments.AnyAsync(p => p.BookingId == id, cancellationToken);
+        var purgeScheduledAt = booking.Status == BookingStatus.Cancelled && !hasPayments && booking.CancelledAt is not null
+            ? booking.CancelledAt.Value.AddDays(retention.Value.CancelledDays)
+            : (DateTime?)null;
+
+        var offset = LagosOffset();
+        var checkInAt = ResolveInstant(booking.CheckInAt, booking.CheckInDate, new TimeOnly(14, 0), offset);
+        var checkOutAt = ResolveInstant(booking.CheckOutAt, booking.CheckOutDate, new TimeOnly(12, 0), offset);
+
         string? createdByName = null;
         if (booking.CreatedByUserId is not null)
         {
@@ -1721,7 +1790,6 @@ public class BookingService(
                 createdByName = null;
         }
 
-        var offset = LagosOffset();
         return new BookingDetailResponse(
             booking.Id,
             booking.BookingReference,
@@ -1730,10 +1798,10 @@ public class BookingService(
             booking.Guest?.PhoneNumber,
             booking.CheckInDate,
             booking.CheckOutDate,
-            StayFormat.LocalTime(booking.CheckInAt, offset),
-            StayFormat.LocalTime(booking.CheckOutAt, offset),
-            StayFormat.Iso(booking.CheckInAt, offset),
-            StayFormat.Iso(booking.CheckOutAt, offset),
+            StayFormat.LocalTime(checkInAt, offset),
+            StayFormat.LocalTime(checkOutAt, offset),
+            StayFormat.Iso(checkInAt, offset),
+            StayFormat.Iso(checkOutAt, offset),
             booking.ActualCheckInAt is null ? null : StayFormat.Iso(booking.ActualCheckInAt.Value, offset),
             booking.ActualCheckOutAt is null ? null : StayFormat.Iso(booking.ActualCheckOutAt.Value, offset),
             booking.Nights,
@@ -1762,6 +1830,36 @@ public class BookingService(
                 a.AssignedAt,
                 a.ReleasedAt)).ToList(),
             new PaymentSummary(paid, Math.Max(0, booking.TotalAmount - paid)),
-            booking.CreatedAt);
+            booking.CreatedAt,
+            booking.CancelledAt,
+            purgeScheduledAt,
+            hasPayments);
+    }
+
+    /// <summary>
+    /// SoT 7n / BR-042: an administrator can restore a cancelled booking (undo the cancellation)
+    /// as long as it has not yet been auto-purged. Rooms are not re-assigned; the booking returns
+    /// to Confirmed so the desk can re-plan.
+    /// </summary>
+    public async Task<Result<BookingDetailResponse>> RestoreAsync(Guid id, Guid adminUserId, CancellationToken cancellationToken)
+    {
+        var booking = await db.Bookings.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        if (booking is null)
+            return Error.NotFound("booking.not_found", "Booking not found");
+
+        if (booking.Status != BookingStatus.Cancelled)
+            return Error.Conflict("booking.not_cancelled", $"Only cancelled bookings can be restored (current: {booking.Status})");
+
+        booking.Status = BookingStatus.Confirmed;
+        booking.CancelledAt = null;
+        booking.CancellationReason = null;
+        booking.ConcurrencyToken = Guid.NewGuid().ToByteArray();
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        await activityLogger.LogAsync(adminUserId, "booking.restored", "Booking", booking.Id,
+            $"Restored cancelled booking {booking.BookingReference}", cancellationToken);
+
+        return await MapAsync(booking.Id, cancellationToken);
     }
 }

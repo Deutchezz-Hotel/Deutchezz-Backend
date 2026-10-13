@@ -1,4 +1,5 @@
 using Deutchezz.Application.Abstractions;
+using Deutchezz.Application.Bookings;
 using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
 using Deutchezz.Domain.Common;
@@ -122,9 +123,10 @@ public class ReportsService(IAppDbContext db, IBusinessClock clock) : IReportsSe
             .Where(a => a.Status == BookingStatus.CheckedIn && a.ActualCheckOutAt == null)
             .Select(a => a.Id).Distinct().Count();
 
-        var overdueCheckOuts = activity
-            .Where(a => a.Status == BookingStatus.CheckedIn && a.ActualCheckOutAt == null && a.CheckOutAt < nowUtc)
-            .Select(a => a.Id).Distinct().Count();
+        // Same predicate the reception/admin booking list filters on, so the dashboard card and
+        // the list it links to can never disagree (SoT v1.12).
+        var overdueCheckOuts = await BookingQueries.OverdueCheckOuts(db.Bookings, nowUtc)
+            .CountAsync(cancellationToken);
 
         var roomsFreeingToday = coveringNow
             .Where(a => clock.ToLocalDate(new DateTimeOffset(DateTime.SpecifyKind(a.CheckOutAt, DateTimeKind.Utc))) == today)

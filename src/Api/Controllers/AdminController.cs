@@ -136,6 +136,17 @@ public class AdminController(
         return result.ToActionResult();
     }
 
+    [HttpPost("bookings/{id:guid}/restore")]
+    public async Task<IActionResult> RestoreBooking(Guid id, CancellationToken cancellationToken)
+    {
+        var userId = this.GetUserId();
+        if (userId is null)
+            return Error.Unauthorized("auth.required", "Authentication is required to access this resource.").ToActionResult();
+
+        var result = await bookings.RestoreAsync(id, userId.Value, cancellationToken);
+        return result.ToActionResult();
+    }
+
     // ----- Guests -----
 
     [HttpGet("guests")]

@@ -112,7 +112,10 @@ public record BookingDetailResponse(
     List<BookingRoomTypeLineResponse> Lines,
     List<RoomAssignmentResponse> Assignments,
     PaymentSummary Payments,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    DateTime? CancelledAt = null,
+    DateTime? PurgeScheduledAt = null,
+    bool HasPayments = false);
 
 public record BookingListItemResponse(
     Guid Id,
@@ -204,4 +207,12 @@ public class BookingSearchQuery : QueryParameters
     /// <summary>Reception filter (7l): only bookings whose outstanding balance is positive and
     /// which are not cancelled. Backs the "record payment" combobox.</summary>
     public bool HasBalanceDue { get; set; }
+
+    /// <summary>Admin dashboard drill-down: only active bookings (Pending/Confirmed/CheckedIn).
+    /// Backs the "Active bookings" card.</summary>
+    public bool ActiveOnly { get; set; }
+
+    /// <summary>Admin dashboard drill-down: bookings whose check-out falls today.
+    /// Backs the "Rooms freeing today" card.</summary>
+    public bool CheckOutToday { get; set; }
 }

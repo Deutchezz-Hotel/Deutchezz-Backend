@@ -20,4 +20,5 @@ public interface IBookingService
     Task<Result<ChangeRoomTypeResponse>> ChangeRoomTypeAsync(Guid id, ChangeRoomTypeRequest request, Guid staffUserId, CancellationToken cancellationToken);
     Task<Result<BookingDetailResponse>> ReassignRoomAsync(Guid id, ReassignRoomRequest request, Guid staffUserId, CancellationToken cancellationToken);
     Task<Result<BookingDetailResponse>> UnassignRoomAsync(Guid id, UnassignRoomRequest request, Guid staffUserId, CancellationToken cancellationToken);
+    Task<Result<BookingDetailResponse>> RestoreAsync(Guid id, Guid adminUserId, CancellationToken cancellationToken);
 }
