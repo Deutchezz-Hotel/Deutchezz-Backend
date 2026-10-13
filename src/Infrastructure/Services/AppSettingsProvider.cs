@@ -6,7 +6,8 @@ namespace Deutchezz.Infrastructure.Services;
 
 public class AppSettingsProvider(
     IOptions<SettingsOptions> settings,
-    IOptions<CancellationOptions> cancellation) : ISettingsProvider
+    IOptions<CancellationOptions> cancellation,
+    IOptions<BookingOptions> booking) : ISettingsProvider
 {
     private readonly SettingsOptions _settings = settings.Value;
 
@@ -21,6 +22,10 @@ public class AppSettingsProvider(
     public bool RequireFullPaymentAtCheckIn => _settings.RequireFullPaymentAtCheckIn;
 
     public bool RequirePaymentBeforeCheckOut => _settings.RequirePaymentBeforeCheckOut;
+
+    public bool EarlyCheckOutRequiresAdmin => _settings.EarlyCheckOutRequiresAdmin;
+
+    public int DuplicateWarningMinutes => booking.Value.DuplicateWarningMinutes;
 
     private static TimeOnly Parse(string value, string fallback) =>
         TimeOnly.TryParse(value, out var time) ? time : TimeOnly.Parse(fallback);

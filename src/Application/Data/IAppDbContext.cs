@@ -1,4 +1,5 @@
 using Deutchezz.Domain.Entities;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
@@ -8,6 +9,7 @@ public interface IAppDbContext
 {
     DbSet<User> Users { get; }
     DbSet<Role> Roles { get; }
+    DbSet<IdentityUserRole<Guid>> UserRoles { get; }
     DbSet<Guest> Guests { get; }
     DbSet<RoomType> RoomTypes { get; }
     DbSet<Room> Rooms { get; }
@@ -18,6 +20,8 @@ public interface IAppDbContext
     DbSet<Notification> Notifications { get; }
     DbSet<ActivityLog> ActivityLogs { get; }
     DbSet<Setting> Settings { get; }
+    DbSet<PendingRegistration> PendingRegistrations { get; }
+    DbSet<PasswordResetCode> PasswordResetCodes { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Common.Options;
 using Deutchezz.Application.Data;
@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Deutchezz.Infrastructure.Uploads;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -35,6 +36,11 @@ public static class DependencyInjection
                 options.Password.RequiredLength = 8;
                 options.Password.RequireNonAlphanumeric = false;
                 options.User.RequireUniqueEmail = true;
+
+                // Uniform credential failures + lockout on repeated wrong passwords (v1.6).
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.MaxFailedAccessAttempts = 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             })
             .AddEntityFrameworkStores<AppDbContext>()
             .AddDefaultTokenProviders();
@@ -101,6 +107,7 @@ public static class DependencyInjection
         services.AddScoped<IDbConflictDetector, NpgsqlConflictDetector>();
         services.AddScoped<IActivityLogger, ActivityLogger>();
         services.AddScoped<ITokenService, TokenService>();
+        services.AddSingleton<IOtpCodeService, HmacOtpCodeService>();
 
         services.AddScoped<SmtpEmailSender>();
         services.AddScoped<LoggingEmailSender>();
@@ -112,6 +119,13 @@ public static class DependencyInjection
                 : serviceProvider.GetRequiredService<LoggingEmailSender>();
         });
 
+        services.Configure<CloudinaryOptions>(configuration.GetSection("Cloudinary"));
+        services.AddScoped<Deutchezz.Application.Uploads.IImageUploadService, CloudinaryImageUploadService>();
         return services;
     }
 }
+
+
+
+
+

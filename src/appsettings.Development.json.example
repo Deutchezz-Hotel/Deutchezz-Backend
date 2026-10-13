@@ -1,0 +1,28 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=deutchezz_dev;Username=postgres;Password=CHANGE_ME"
+  },
+  "Cloudinary": {
+    "CloudName": "",
+    "ApiKey": "",
+    "ApiSecret": ""
+  },
+  "Email": {
+    "Smtp": {
+      "Host": "smtp.gmail.com",
+      "Port": 587,
+      "Username": "",
+      "Password": "",
+      "FromAddress": "",
+      "FromName": "Deutchezz Hotel Ispahan"
+    },
+    "AdminNotificationAddress": "",
+    "FrontendBaseUrl": "http://localhost:5173"
+  }
+}

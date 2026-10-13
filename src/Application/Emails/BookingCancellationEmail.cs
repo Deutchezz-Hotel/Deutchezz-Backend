@@ -40,6 +40,7 @@ public static class BookingCancellationEmail
             refund is not null ? $"Refunded: NGN {refund:N2}" : "",
             reason is null ? "" : $"Reason: {model.Reason}");
 
-        return (subject, EmailLayout.Render("Booking cancelled", body), text);
+        return (subject, EmailLayout.Render("Booking cancelled", body,
+            $"Your booking {model.BookingReference} has been cancelled."), text);
     }
 }

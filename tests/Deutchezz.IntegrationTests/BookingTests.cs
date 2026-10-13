@@ -113,6 +113,117 @@ public class BookingTests(HotelWebApplicationFactory factory) : IntegrationTestB
         await AssertProblemAsync(response, (int)HttpStatusCode.NotFound, "booking.not_found");
     }
 
+    [Fact]
+    public async Task Create_sends_guest_confirmation_and_staff_alert()
+    {
+        using var client = CreateClient();
+        var roomTypeId = await GetRoomTypeIdAsync(client, "Standard");
+        var email = $"email-{Guid.NewGuid():N}@example.com";
+
+        var response = await SendCreateAsync(client, NewKey(), BuildRequest(roomTypeId, guestEmail: email));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var reference = (await ReadJsonAsync(response)).GetProperty("booking").GetProperty("bookingReference").GetString();
+
+        var confirmation = EmailSender.Sent.FirstOrDefault(e => e.To == email);
+        Assert.NotNull(confirmation);
+        Assert.Contains(reference!, confirmation!.Subject);
+
+        var alert = EmailSender.Sent.FirstOrDefault(
+            e => e.To == "desk@deutchezz.test" && e.Subject.Contains(reference!, StringComparison.Ordinal));
+        Assert.NotNull(alert);
+        Assert.Contains(email, alert!.HtmlBody);
+    }
+
+    [Fact]
+    public async Task Authenticated_customer_booking_appears_in_customer_bookings()
+    {
+        var customer = await RegisterCustomerAsync();
+
+        using var client = CreateClientWithToken(customer.AccessToken);
+        var roomTypeId = await GetRoomTypeIdAsync(client, "Standard");
+        var created = await SendCreateAsync(client, NewKey(), BuildRequest(roomTypeId, guestEmail: customer.Email));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var reference = (await ReadJsonAsync(created)).GetProperty("booking").GetProperty("bookingReference").GetString();
+
+        Assert.Contains(reference, await ListCustomerBookingReferencesAsync(client));
+    }
+
+    [Fact]
+    public async Task Anonymous_booking_with_registered_email_appears_in_customer_bookings()
+    {
+        // Regression for the reported bug: a booking made with a registered account's email but
+        // no bearer token must still show up in that customer's dashboard.
+        var customer = await RegisterCustomerAsync();
+
+        using var anonymous = CreateClient();
+        var roomTypeId = await GetRoomTypeIdAsync(anonymous, "Standard");
+        var created = await SendCreateAsync(anonymous, NewKey(), BuildRequest(roomTypeId, guestEmail: customer.Email));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var reference = (await ReadJsonAsync(created)).GetProperty("booking").GetProperty("bookingReference").GetString();
+
+        using var owner = CreateClientWithToken(customer.AccessToken);
+        Assert.Contains(reference, await ListCustomerBookingReferencesAsync(owner));
+    }
+
+    [Fact]
+    public async Task Registering_with_prior_anonymous_booking_email_links_it()
+    {
+        // A visitor books anonymously, then registers with the same email: the booking must
+        // be adopted into the new account without any further action.
+        var email = $"prior-{Guid.NewGuid():N}@example.com";
+
+        using var anonymous = CreateClient();
+        var roomTypeId = await GetRoomTypeIdAsync(anonymous, "Standard");
+        var created = await SendCreateAsync(anonymous, NewKey(), BuildRequest(roomTypeId, guestEmail: email));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var reference = (await ReadJsonAsync(created)).GetProperty("booking").GetProperty("bookingReference").GetString();
+
+        var customer = await RegisterCustomerAsync(email: email);
+        using var owner = CreateClientWithToken(customer.AccessToken);
+        Assert.Contains(reference, await ListCustomerBookingReferencesAsync(owner));
+    }
+
+    [Fact]
+    public async Task Profile_update_syncs_linked_guest_name()
+    {
+        var customer = await RegisterCustomerAsync();
+
+        using var owner = CreateClientWithToken(customer.AccessToken);
+        var roomTypeId = await GetRoomTypeIdAsync(owner, "Standard");
+        var created = await SendCreateAsync(owner, NewKey(), BuildRequest(roomTypeId, guestEmail: customer.Email));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var update = await owner.PutAsJsonAsync("/api/v1/me/profile", new
+        {
+            firstName = "Renamed",
+            lastName = "Guest",
+            phoneNumber = "08099999999"
+        });
+        update.EnsureSuccessStatusCode();
+
+        var admin = await LoginAsAdminAsync();
+        using var adminClient = CreateClientWithToken(admin.AccessToken);
+        var response = await adminClient.GetAsync($"/api/v1/admin/guests?search={Uri.EscapeDataString(customer.Email)}&pageSize=10");
+        response.EnsureSuccessStatusCode();
+
+        var body = await ReadJsonAsync(response);
+        var guest = body.GetProperty("items").EnumerateArray().First();
+        Assert.Equal("Renamed", guest.GetProperty("firstName").GetString());
+        Assert.Equal("Guest", guest.GetProperty("lastName").GetString());
+        Assert.Equal("+2348099999999", guest.GetProperty("phoneNumber").GetString());
+    }
+
+    private static async Task<List<string?>> ListCustomerBookingReferencesAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/api/v1/me/bookings?pageSize=100");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await ReadJsonAsync(response);
+        return body.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("bookingReference").GetString())
+            .ToList();
+    }
+
     private static string NewKey() => Guid.NewGuid().ToString();
 
     private static object BuildRequest(Guid roomTypeId, DateOnly? checkIn = null, DateOnly? checkOut = null, string? guestEmail = null)
@@ -131,7 +242,7 @@ public class BookingTests(HotelWebApplicationFactory factory) : IntegrationTestB
                 firstName = "Ada",
                 lastName = "Obi",
                 email = guestEmail ?? $"guest-{Guid.NewGuid():N}@example.com",
-                phoneNumber = "08010000000"
+                phoneNumber = UniquePhone()
             },
             rooms = new[] { new { roomTypeId, quantity = 1 } },
             specialRequests = (string?)null

@@ -15,10 +15,14 @@ public class Booking : AuditableEntity
     public int Children { get; set; }
     public BookingStatus Status { get; set; } = BookingStatus.Pending;
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Pending;
+    public BookingSource Source { get; set; } = BookingSource.Online;
     public string? SpecialRequests { get; set; }
     public decimal TotalAmount { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
+    public DateTime? ActualCheckOutAt { get; set; }
+    public string? EarlyCheckOutReason { get; set; }
+    public string? EarlyCheckOutNotes { get; set; }
     public Guid? CreatedByUserId { get; set; }
     public string? IdempotencyKey { get; set; }
     public string? IdempotencyRequestHash { get; set; }

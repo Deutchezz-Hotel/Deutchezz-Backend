@@ -26,18 +26,24 @@ public class PaymentService(IAppDbContext db, IActivityLogger activityLogger, IE
         if (!Enum.TryParse<PaymentMethod>(request.Method, true, out var method))
             return Error.Validation("payment.invalid_method", "Invalid payment method");
 
-        var booking = await db.Bookings.FirstOrDefaultAsync(b => b.Id == request.BookingId, cancellationToken);
+        var booking = await db.Bookings.Include(b => b.Guest).FirstOrDefaultAsync(b => b.Id == request.BookingId, cancellationToken);
         if (booking is null)
             return Error.NotFound("booking.not_found", "Booking not found");
 
-        if (booking.Status is BookingStatus.Cancelled)
-            return Error.Conflict("payment.booking_closed", "Cannot record a payment for a cancelled booking");
-
+        // 7l: a payment is only valid against an outstanding balance. A cancelled booking, or one
+        // that is already fully paid (TotalAmount − Σ Paid payments ≤ 0), has no balance due.
         var paid = await db.Payments
-            .Where(p => p.BookingId == request.BookingId && p.Amount > 0)
+            .Where(p => p.BookingId == request.BookingId && p.Status == PaymentStatus.Paid)
             .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
+        var balanceDue = booking.TotalAmount - paid;
 
-        if (paid + request.Amount > booking.TotalAmount)
+        if (booking.Status == BookingStatus.Cancelled || balanceDue <= 0m)
+            return Error.Conflict("payment.no_balance_due",
+                booking.Status == BookingStatus.Cancelled
+                    ? "Cannot record a payment for a cancelled booking"
+                    : "This booking is fully paid and has no balance due");
+
+        if (request.Amount > balanceDue)
             return Error.Conflict("payment.overpayment",
                 "Payment would exceed the booking total (overpayment is rejected)");
 
@@ -60,23 +66,28 @@ public class PaymentService(IAppDbContext db, IActivityLogger activityLogger, IE
 
         await db.SaveChangesAsync(cancellationToken);
 
-        db.Notifications.Add(new Domain.Entities.Notification
+        // BR-036: only notify a guest who has an account (walk-in guests have none).
+        if (booking.Guest?.UserId is not null)
         {
-            GuestId = booking.GuestId,
-            UserId = booking.CreatedByUserId,
-            Type = NotificationType.PaymentReceived,
-            Title = "Payment received",
-            Message = $"A payment of {request.Amount} was recorded for booking {booking.BookingReference}.",
-            CreatedAt = DateTime.UtcNow
-        });
-        await db.SaveChangesAsync(cancellationToken);
+            db.Notifications.Add(new Domain.Entities.Notification
+            {
+                GuestId = booking.GuestId,
+                UserId = booking.Guest.UserId,
+                Type = NotificationType.PaymentReceived,
+                Title = "Payment received",
+                Message = $"A payment of {request.Amount} was recorded for booking {booking.BookingReference}.",
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync(cancellationToken);
+        }
 
         await activityLogger.LogAsync(recordedByUserId, "payment.recorded", "Payment", payment.Id,
             $"Recorded {request.Amount} via {method} for booking {booking.BookingReference}", cancellationToken);
 
-        var guest = await db.Guests.FirstOrDefaultAsync(g => g.Id == booking.GuestId, cancellationToken);
+        var guest = booking.Guest;
         if (guest is not null && !string.IsNullOrWhiteSpace(guest.Email))
         {
+            var email = guest.Email;
             var (subject, html, text) = PaymentReceiptEmail.Build(new PaymentReceiptModel(
                 booking.BookingReference,
                 $"{guest.FirstName} {guest.LastName}".Trim(),
@@ -87,7 +98,7 @@ public class PaymentService(IAppDbContext db, IActivityLogger activityLogger, IE
                 newPaid,
                 Math.Max(0, booking.TotalAmount - newPaid),
                 payment.CreatedAt));
-            _ = emailSender.SendAsync(guest.Email, subject, html, text, CancellationToken.None);
+            _ = emailSender.SendAsync(email, subject, html, text, CancellationToken.None);
         }
 
         return new PaymentResponse(payment.Id, payment.BookingId, payment.Amount, method.ToString(), payment.Status.ToString(), payment.Reference, payment.Notes, payment.CreatedAt, recordedByUserId);

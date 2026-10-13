@@ -38,8 +38,10 @@ public class ReceptionFlowTests(HotelWebApplicationFactory factory) : Integratio
         Assert.Equal("CheckedIn", checkIn.GetProperty("status").GetString());
         Assert.Contains(roomNumber, checkIn.GetProperty("roomNumbers").EnumerateArray().Select(r => r.GetString()));
 
-        var checkOutResponse = await staff.PostAsync(
-            $"/api/v1/reception/bookings/{bookingId}/check-out", content: null);
+        // The stay ends in the future, so this is an early check-out and requires recorded consent.
+        var checkOutResponse = await staff.PostAsJsonAsync(
+            $"/api/v1/reception/bookings/{bookingId}/check-out",
+            new { earlyCheckOut = new { reason = "GuestRequest", notes = (string?)null, guestConsented = true } });
 
         Assert.Equal(HttpStatusCode.OK, checkOutResponse.StatusCode);
         var checkOut = await ReadJsonAsync(checkOutResponse);
@@ -72,7 +74,7 @@ public class ReceptionFlowTests(HotelWebApplicationFactory factory) : Integratio
                     firstName = "Reception",
                     lastName = "Flow",
                     email = $"reception-{Guid.NewGuid():N}@example.com",
-                    phoneNumber = "08010000000"
+                    phoneNumber = UniquePhone()
                 },
                 rooms = new[] { new { roomTypeId, quantity = 1 } },
                 specialRequests = (string?)null

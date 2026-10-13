@@ -17,6 +17,32 @@ public class RoomsService(IAppDbContext db, IActivityLogger activityLogger) : IR
         if (query.RoomTypeId is not null)
             q = q.Where(r => r.RoomTypeId == query.RoomTypeId);
 
+        // Stay-availability range: both ends required, half-open [availableFrom, availableTo).
+        // Only active, usable rooms with no live assignment held by a Confirmed/CheckedIn
+        // booking whose stay overlaps the range are returned.
+        if (query.AvailableFrom is not null || query.AvailableTo is not null)
+        {
+            if (query.AvailableFrom is null || query.AvailableTo is null || query.AvailableFrom >= query.AvailableTo)
+                return Error.Validation("room.invalid_availability_range",
+                    "availableFrom and availableTo must both be provided and availableFrom must be before availableTo");
+
+            var from = query.AvailableFrom.Value;
+            var to = query.AvailableTo.Value;
+
+            var busyRoomIds = await db.RoomAssignments
+                .Where(ra => ra.ReleasedAt == null)
+                .Join(db.Bookings.Where(b => (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn)
+                        && b.CheckInDate < to && b.CheckOutDate > from),
+                    ra => ra.BookingId, b => b.Id, (ra, b) => ra.RoomId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            q = q.Where(r => r.IsActive
+                && r.Status != RoomStatus.Maintenance
+                && r.Status != RoomStatus.Inactive
+                && !busyRoomIds.Contains(r.Id));
+        }
+
         // Date-based board: when a date is supplied, "Occupied" means a room assigned to a
         // Confirmed/CheckedIn booking that covers that date, independent of the stored physical
         // status. Without a date we fall back to the physical status (unchanged behaviour).

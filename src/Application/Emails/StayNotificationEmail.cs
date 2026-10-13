@@ -24,7 +24,8 @@ public static class StayNotificationEmail
             $"Guest: {model.GuestName}",
             $"Room(s): {string.Join(", ", model.RoomNumbers)}",
             $"Checked in: {model.OccurredAt:yyyy-MM-dd HH:mm}");
-        return ($"Checked in {model.BookingReference}", EmailLayout.Render("Checked in", body), text);
+        return ($"Checked in {model.BookingReference}", EmailLayout.Render("Checked in", body,
+            $"You are checked in to booking {model.BookingReference}."), text);
     }
 
     public static (string Subject, string Html, string Text) BuildCheckOut(StayNotificationModel model)
@@ -42,6 +43,7 @@ public static class StayNotificationEmail
             $"Guest: {model.GuestName}",
             $"Room(s): {string.Join(", ", model.RoomNumbers)}",
             $"Checked out: {model.OccurredAt:yyyy-MM-dd HH:mm}");
-        return ($"Checked out {model.BookingReference}", EmailLayout.Render("Checked out", body), text);
+        return ($"Checked out {model.BookingReference}", EmailLayout.Render("Checked out", body,
+            $"You are checked out of booking {model.BookingReference}."), text);
     }
 }

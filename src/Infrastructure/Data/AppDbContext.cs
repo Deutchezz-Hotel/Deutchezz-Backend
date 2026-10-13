@@ -9,6 +9,8 @@ namespace Deutchezz.Infrastructure.Data;
 public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbContext<User, Role, Guid>(options), IAppDbContext
 {
     public DbSet<Guest> Guests => Set<Guest>();
+    public new DbSet<Role> Roles => Set<Role>();
+    public new DbSet<Microsoft.AspNetCore.Identity.IdentityUserRole<Guid>> UserRoles => Set<Microsoft.AspNetCore.Identity.IdentityUserRole<Guid>>();
     public DbSet<RoomType> RoomTypes => Set<RoomType>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Booking> Bookings => Set<Booking>();
@@ -18,6 +20,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<Setting> Settings => Set<Setting>();
+    public DbSet<PendingRegistration> PendingRegistrations => Set<PendingRegistration>();
+    public DbSet<PasswordResetCode> PasswordResetCodes => Set<PasswordResetCode>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

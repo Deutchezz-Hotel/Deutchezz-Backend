@@ -10,6 +10,7 @@ using Deutchezz.Application.Rooms;
 using Deutchezz.Application.RoomTypes;
 using Deutchezz.Application.Settings;
 using Deutchezz.Application.Staff;
+using Deutchezz.Application.Users;
 using Deutchezz.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,6 +26,7 @@ public class AdminController(
     IBookingService bookings,
     IGuestsService guests,
     IStaffService staff,
+    IUserAdminService users,
     IPaymentService payments,
     INotificationService notifications,
     IAdminSettingsService settings,
@@ -90,7 +92,7 @@ public class AdminController(
     [HttpGet("room-types/{id:guid}")]
     public async Task<IActionResult> GetRoomType(Guid id, CancellationToken cancellationToken)
     {
-        var result = await roomTypes.GetByIdAsync(id, cancellationToken);
+        var result = await roomTypes.GetByIdForAdminAsync(id, cancellationToken);
         return result.ToActionResult();
     }
 
@@ -143,19 +145,31 @@ public class AdminController(
         return result.ToActionResult();
     }
 
+    // ----- Users -----
+
+    [HttpGet("users")]
+    public async Task<IActionResult> ListUsers([FromQuery] UserAdminQuery query, CancellationToken cancellationToken)
+    {
+        var result = await users.ListAsync(query, cancellationToken);
+        return result.ToActionResult();
+    }
+
+    [HttpPatch("users/{id:guid}/role")]
+    public async Task<IActionResult> ChangeUserRole(Guid id, [FromBody] ChangeUserRoleRequest request, CancellationToken cancellationToken)
+    {
+        var userId = this.GetUserId();
+        if (userId is null) return Error.Unauthorized("auth.required", "Authentication is required to access this resource.").ToActionResult();
+
+        var result = await users.ChangeRoleAsync(id, request, userId.Value, cancellationToken);
+        return result.ToActionResult();
+    }
+
     // ----- Staff -----
 
     [HttpGet("staff")]
     public async Task<IActionResult> ListStaff([FromQuery] StaffQuery query, CancellationToken cancellationToken)
     {
         var result = await staff.ListAsync(query, cancellationToken);
-        return result.ToActionResult();
-    }
-
-    [HttpGet("staff/{id:guid}")]
-    public async Task<IActionResult> GetStaff(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await staff.GetByIdAsync(id, cancellationToken);
         return result.ToActionResult();
     }
 
@@ -168,16 +182,6 @@ public class AdminController(
         var result = await staff.CreateAsync(request, userId.Value, cancellationToken);
         if (result.IsFailure) return result.ToActionResult();
         return StatusCode(StatusCodes.Status201Created, result.Value);
-    }
-
-    [HttpPut("staff/{id:guid}")]
-    public async Task<IActionResult> UpdateStaff(Guid id, [FromBody] UpdateStaffRequest request, CancellationToken cancellationToken)
-    {
-        var userId = this.GetUserId();
-        if (userId is null) return Error.Unauthorized("auth.required", "Authentication is required to access this resource.").ToActionResult();
-
-        var result = await staff.UpdateAsync(id, request, userId.Value, cancellationToken);
-        return result.ToActionResult();
     }
 
     [HttpPatch("staff/{id:guid}/status")]

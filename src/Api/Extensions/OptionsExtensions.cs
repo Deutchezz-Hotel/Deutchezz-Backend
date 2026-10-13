@@ -41,6 +41,12 @@ public static class OptionsExtensions
             .Validate(o => o.WindowHours > 0, "Cancellation:WindowHours must be greater than 0.")
             .ValidateOnStart();
 
+        services.AddOptions<BookingOptions>()
+            .Bind(configuration.GetSection(BookingOptions.SectionName))
+            .Validate(o => o.DuplicateWarningMinutes >= 0,
+                "Booking:DuplicateWarningMinutes must not be negative.")
+            .ValidateOnStart();
+
         services.AddOptions<SettingsOptions>()
             .Bind(configuration.GetSection(SettingsOptions.SectionName))
             .Validate(o => o.MaxRoomsPerBooking >= 1 && o.MaxRoomsPerBooking <= 1000,
@@ -53,6 +59,26 @@ public static class OptionsExtensions
             .Bind(configuration.GetSection(JobsOptions.SectionName))
             .Validate(o => o.PendingExpiryIntervalMinutes > 0,
                 "Jobs:PendingExpiryIntervalMinutes must be greater than 0.")
+            .Validate(o => o.VerificationCleanupIntervalMinutes > 0,
+                "Jobs:VerificationCleanupIntervalMinutes must be greater than 0.")
+            .ValidateOnStart();
+
+        services.AddOptions<AuthOptions>()
+            .Bind(configuration.GetSection(AuthOptions.SectionName))
+            .Validate(o => o.CodeMinutes > 0, "Auth:CodeMinutes must be greater than 0.")
+            .Validate(o => o.ResendCooldownSeconds >= 0, "Auth:ResendCooldownSeconds must not be negative.")
+            .Validate(o => o.MaxSendsPerHour > 0, "Auth:MaxSendsPerHour must be greater than 0.")
+            .Validate(o => o.PendingRegistrationHours > 0, "Auth:PendingRegistrationHours must be greater than 0.")
+            .Validate(o => o.MaxFailedAttempts > 0, "Auth:MaxFailedAttempts must be greater than 0.")
+            .ValidateOnStart();
+
+        services.AddOptions<SecurityOptions>()
+            .Bind(configuration.GetSection(SecurityOptions.SectionName))
+            .Validate(
+                o => Encoding.UTF8.GetByteCount(o.OtpHmacKey) >= 32,
+                "Security:OtpHmacKey is missing or shorter than 32 bytes. Generate one with: $b = New-Object byte[] 64; " +
+                "[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); " +
+                "then set it via: dotnet user-secrets set \"Security:OtpHmacKey\" ([Convert]::ToBase64String($b)) --project src/Deutchezz.csproj")
             .ValidateOnStart();
 
         services.AddOptions<CorsOptions>()
@@ -65,6 +91,7 @@ public static class OptionsExtensions
         services.AddOptions<RateLimitingOptions>()
             .Bind(configuration.GetSection(RateLimitingOptions.SectionName))
             .Validate(o => o.Auth.PermitLimit > 0 && o.Auth.WindowSeconds > 0, "RateLimiting:Auth PermitLimit/WindowSeconds must be positive.")
+            .Validate(o => o.Otp.PermitLimit > 0 && o.Otp.WindowSeconds > 0, "RateLimiting:Otp PermitLimit/WindowSeconds must be positive.")
             .Validate(o => o.Lookup.PermitLimit > 0 && o.Lookup.WindowSeconds > 0, "RateLimiting:Lookup PermitLimit/WindowSeconds must be positive.")
             .Validate(o => o.BookingCreate.PermitLimit > 0 && o.BookingCreate.WindowSeconds > 0, "RateLimiting:BookingCreate PermitLimit/WindowSeconds must be positive.")
             .ValidateOnStart();
@@ -72,9 +99,30 @@ public static class OptionsExtensions
         services.AddOptions<EmailOptions>()
             .Bind(configuration.GetSection(EmailOptions.SectionName))
             .Validate(o => o.Smtp.Port > 0 && o.Smtp.Port <= 65535, "Email:Smtp:Port must be a valid TCP port.")
+            .Validate(o => Uri.TryCreate(o.FrontendBaseUrl, UriKind.Absolute, out _),
+                "Email:FrontendBaseUrl must be an absolute URL such as http://localhost:5173.")
+            .Validate(o => IsDeliverableAdminAddress(o.AdminNotificationAddress),
+                "Email:AdminNotificationAddress must be a real, deliverable mailbox (placeholder or " +
+                "'.local' addresses are rejected) or left empty to disable staff alerts.")
             .ValidateOnStart();
 
         return services;
+    }
+
+    /// <summary>
+    /// True when <paramref name="address"/> is empty (staff alerts disabled) or looks like a
+    /// real, routable mailbox. Catches the un-replaced <c>CHANGE_ME@…</c> / <c>…@deutchezz.local</c>
+    /// placeholders that previously passed validation and bounced at the mail exchanger.
+    /// </summary>
+    internal static bool IsDeliverableAdminAddress(string address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+            return true;
+
+        var trimmed = address.Trim();
+        return trimmed.Contains('@')
+            && !trimmed.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase)
+            && !trimmed.EndsWith(".local", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -88,10 +136,13 @@ public static class OptionsExtensions
         _ = services.GetRequiredService<IOptions<JwtOptions>>().Value;
         _ = services.GetRequiredService<IOptions<SeedOptions>>().Value;
         _ = services.GetRequiredService<IOptions<CancellationOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<BookingOptions>>().Value;
         _ = services.GetRequiredService<IOptions<SettingsOptions>>().Value;
         _ = services.GetRequiredService<IOptions<CorsOptions>>().Value;
         _ = services.GetRequiredService<IOptions<RateLimitingOptions>>().Value;
         _ = services.GetRequiredService<IOptions<EmailOptions>>().Value;
         _ = services.GetRequiredService<IOptions<JobsOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<AuthOptions>>().Value;
+        _ = services.GetRequiredService<IOptions<SecurityOptions>>().Value;
     }
 }

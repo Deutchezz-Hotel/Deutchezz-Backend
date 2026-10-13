@@ -77,6 +77,8 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("auth", context =>
         FixedWindowPartition(context, p => p.Auth.PermitLimit, p => p.Auth.WindowSeconds));
+    options.AddPolicy("otp", context =>
+        FixedWindowPartition(context, p => p.Otp.PermitLimit, p => p.Otp.WindowSeconds));
     options.AddPolicy("lookup", context =>
         FixedWindowPartition(context, p => p.Lookup.PermitLimit, p => p.Lookup.WindowSeconds));
     options.AddPolicy("booking-create", context =>
@@ -118,6 +120,19 @@ var app = builder.Build();
 // migration/seed block below. Force-validate the options now so a missing or invalid setting
 // (empty connection string, Jwt:Key < 32 bytes, ...) aborts before any DB access.
 app.Services.ValidateRequiredOptions();
+
+// Make the active transactional email transport obvious in logs so misconfiguration is caught early.
+{
+    var emailOptions = app.Services.GetRequiredService<IOptions<EmailOptions>>().Value;
+    var smtpReady = emailOptions.Smtp.HasCredentials && !string.IsNullOrWhiteSpace(emailOptions.Smtp.FromAddress);
+    app.Logger.LogInformation(
+        "Transactional email transport: {Transport} (host {Host}:{Port}, from {From}, staff alerts to {AdminAddress})",
+        smtpReady ? "SMTP" : "logging fallback (SMTP credentials not configured)",
+        emailOptions.Smtp.Host,
+        emailOptions.Smtp.Port,
+        string.IsNullOrWhiteSpace(emailOptions.Smtp.FromAddress) ? "(none)" : emailOptions.Smtp.FromAddress,
+        string.IsNullOrWhiteSpace(emailOptions.AdminNotificationAddress) ? "(disabled)" : emailOptions.AdminNotificationAddress);
+}
 
 if (app.Environment.IsDevelopment())
 {
