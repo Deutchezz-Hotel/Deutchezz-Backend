@@ -111,6 +111,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<string>("EarlyCheckOutReason")
                         .HasColumnType("text");
 
+                    b.Property<decimal>("ExtraChargeAmount")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<Guid>("GuestId")
                         .HasColumnType("uuid");
 
@@ -169,6 +172,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
 
                     b.Property<Guid>("BookingId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal>("ExtraCharge")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<int>("NumberOfNights")
                         .HasColumnType("integer");

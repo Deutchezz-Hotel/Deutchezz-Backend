@@ -16,7 +16,12 @@ public sealed record StayPolicySettings(
     TimeOnly EarliestCheckOutTime,
     TimeOnly LatestCheckOutTime,
     int MaxExtraHoursPerStay,
-    int TurnaroundMinutes);
+    int TurnaroundMinutes,
+    // v1.14 late-check-out pricing bands (see StayPricing).
+    int GraceHours = 2,
+    int HalfDayHours = 6,
+    int HalfDayPercent = 50,
+    int FullNightPercent = 100);
 
 /// <summary>A validated stay window: local dates/times plus the derived UTC instants.</summary>
 public sealed record StayWindow(
@@ -27,7 +32,15 @@ public sealed record StayWindow(
     int Nights,
     DateTime CheckInAt,
     DateTime CheckOutAt,
-    StayPolicySettings Policy);
+    StayPolicySettings Policy)
+{
+    /// <summary>
+    /// Hours the stay runs past its booked nights (v1.14). Because <see cref="Nights"/> is the
+    /// calendar-day difference, this is simply the check-out minus check-in wall-clock time and is
+    /// therefore always below 24h. Negative values (an early check-out time) clamp to zero.
+    /// </summary>
+    public double OverageHours => Math.Max(0, (CheckOutAt - CheckInAt).TotalHours - Nights * 24.0);
+}
 
 public interface IStayPolicyService
 {
@@ -64,6 +77,10 @@ public class StayPolicyService(
     private const string LatestCheckOutTimeKey = "LatestCheckOutTime";
     private const string MaxExtraHoursPerStayKey = "MaxExtraHoursPerStay";
     private const string TurnaroundMinutesKey = "TurnaroundMinutes";
+    private const string GraceHoursKey = "GraceHours";
+    private const string HalfDayHoursKey = "HalfDayHours";
+    private const string HalfDayPercentKey = "HalfDayPercent";
+    private const string FullNightPercentKey = "FullNightPercent";
 
     public async Task<StayPolicySettings> GetPolicyAsync(CancellationToken cancellationToken)
     {
@@ -72,7 +89,9 @@ public class StayPolicyService(
                 || s.Key == TimeSlotMinutesKey || s.Key == EarliestCheckInTimeKey
                 || s.Key == LatestCheckInTimeKey || s.Key == EarliestCheckOutTimeKey
                 || s.Key == LatestCheckOutTimeKey || s.Key == MaxExtraHoursPerStayKey
-                || s.Key == TurnaroundMinutesKey
+                || s.Key == TurnaroundMinutesKey || s.Key == GraceHoursKey
+                || s.Key == HalfDayHoursKey || s.Key == HalfDayPercentKey
+                || s.Key == FullNightPercentKey
                 // Legacy keys (v1.5) remain the fallback for the default times.
                 || s.Key == "CheckInTime" || s.Key == "CheckOutTime")
             .ToDictionaryAsync(s => s.Key, s => s.Value, cancellationToken);
@@ -91,7 +110,11 @@ public class StayPolicyService(
             GetTime(stored, EarliestCheckOutTimeKey, settings.EarliestCheckOutTime),
             GetTime(stored, LatestCheckOutTimeKey, settings.LatestCheckOutTime),
             GetInt(stored, MaxExtraHoursPerStayKey, settings.MaxExtraHoursPerStay, min: 0, max: 720),
-            GetInt(stored, TurnaroundMinutesKey, settings.TurnaroundMinutes, min: 0, max: 1440));
+            GetInt(stored, TurnaroundMinutesKey, settings.TurnaroundMinutes, min: 0, max: 1440),
+            GetInt(stored, GraceHoursKey, settings.GraceHours, min: 0, max: 24),
+            GetInt(stored, HalfDayHoursKey, settings.HalfDayHours, min: 0, max: 24),
+            GetInt(stored, HalfDayPercentKey, settings.HalfDayPercent, min: 0, max: 100),
+            GetInt(stored, FullNightPercentKey, settings.FullNightPercent, min: 0, max: 100));
     }
 
     public async Task<Result<StayWindow>> ResolveAsync(
@@ -132,11 +155,8 @@ public class StayPolicyService(
         if (checkOutAt <= checkInAt)
             return Error.Validation("stay.invalid_range", "Check-out must be after check-in");
 
-        var nights = checkOutDate.DayNumber - checkInDate.DayNumber;
-        var allowed = TimeSpan.FromHours(nights * 24.0 + policy.MaxExtraHoursPerStay);
-        if (checkOutAt - checkInAt > allowed)
-            return Error.Validation("stay.too_long_for_nights",
-                $"A {nights}-night stay may not exceed {nights * 24 + policy.MaxExtraHoursPerStay} hours");
+        // v1.14: a stay may run past its booked nights; the overage is charged rather than rejected
+        // (see StayPricing). Only the ordering and past-time rules still reject.
 
         var nowUtc = businessClock.UtcNow.UtcDateTime;
         var earliestAllowedCheckIn = isStaffWalkIn
@@ -144,6 +164,8 @@ public class StayPolicyService(
             : nowUtc;
         if (checkInAt < earliestAllowedCheckIn)
             return Error.Validation("stay.in_the_past", "Check-in time cannot be in the past");
+
+        var nights = checkOutDate.DayNumber - checkInDate.DayNumber;
 
         return new StayWindow(
             checkInDate, checkIn.Value, checkOutDate, checkOut.Value, nights, checkInAt, checkOutAt, policy);

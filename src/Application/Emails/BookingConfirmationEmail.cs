@@ -1,6 +1,11 @@
 namespace Deutchezz.Application.Emails;
 
-public sealed record BookingConfirmationRoom(string RoomTypeName, int Quantity, decimal RatePerNight, decimal Subtotal);
+public sealed record BookingConfirmationRoom(
+    string RoomTypeName,
+    int Quantity,
+    decimal RatePerNight,
+    decimal Subtotal,
+    decimal ExtraCharge = 0m);
 
 public sealed record BookingConfirmationModel(
     string BookingReference,

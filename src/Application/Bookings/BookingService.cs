@@ -214,11 +214,14 @@ public class BookingService(
         booking.SetStay(s.CheckInDate, s.CheckInTime, s.CheckOutDate, s.CheckOutTime, LagosOffset());
 
         var total = 0m;
+        var extraTotal = 0m;
         foreach (var line in request.Rooms)
         {
             var rate = roomTypes[line.RoomTypeId].BasePrice;
             var subtotal = rate * line.Quantity * nights;
-            total += subtotal;
+            var extra = StayPricing.ExtraCharge(rate, line.Quantity, s);
+            total += subtotal + extra;
+            extraTotal += extra;
             db.BookingRoomTypes.Add(new BookingRoomType
             {
                 BookingId = booking.Id,
@@ -226,9 +229,11 @@ public class BookingService(
                 Quantity = line.Quantity,
                 RatePerNight = rate,
                 NumberOfNights = nights,
-                Subtotal = subtotal
+                Subtotal = subtotal,
+                ExtraCharge = extra
             });
         }
+        booking.ExtraChargeAmount = extraTotal;
         booking.TotalAmount = total;
 
         db.Bookings.Add(booking);
@@ -254,7 +259,8 @@ public class BookingService(
                     roomTypes[r.RoomTypeId].Name,
                     r.Quantity,
                     roomTypes[r.RoomTypeId].BasePrice,
-                    roomTypes[r.RoomTypeId].BasePrice * r.Quantity * nights))
+                    roomTypes[r.RoomTypeId].BasePrice * r.Quantity * nights,
+                    StayPricing.ExtraCharge(roomTypes[r.RoomTypeId].BasePrice, r.Quantity, s)))
                 .ToList();
             var (subject, html, text) = ReceptionBookingSummaryEmail.Build(new ReceptionBookingSummaryModel(
                 booking.BookingReference,
@@ -355,11 +361,14 @@ public class BookingService(
         booking.SetStay(s.CheckInDate, s.CheckInTime, s.CheckOutDate, s.CheckOutTime, LagosOffset());
 
         var total = 0m;
+        var extraTotal = 0m;
         foreach (var line in request.Rooms)
         {
             var rate = roomTypes[line.RoomTypeId].BasePrice;
             var subtotal = rate * line.Quantity * nights;
-            total += subtotal;
+            var extra = StayPricing.ExtraCharge(rate, line.Quantity, s);
+            total += subtotal + extra;
+            extraTotal += extra;
             db.BookingRoomTypes.Add(new BookingRoomType
             {
                 BookingId = booking.Id,
@@ -367,9 +376,11 @@ public class BookingService(
                 Quantity = line.Quantity,
                 RatePerNight = rate,
                 NumberOfNights = nights,
-                Subtotal = subtotal
+                Subtotal = subtotal,
+                ExtraCharge = extra
             });
         }
+        booking.ExtraChargeAmount = extraTotal;
         booking.TotalAmount = total;
 
         db.Bookings.Add(booking);
@@ -1516,6 +1527,14 @@ public class BookingService(
             projectedTotal += oldLine.RatePerNight * nights * (oldLine.Quantity - request.Quantity);
         projectedTotal += lineSubtotal;
 
+        // v1.14: keep the late-check-out surcharge in step with the reshaped lines.
+        var projectedExtra = lines.Where(l => l.Id != oldLine.Id).Sum(l => l.ExtraCharge);
+        if (oldLine.Quantity - request.Quantity > 0)
+            projectedExtra += StayPricing.ExtraCharge(
+                oldLine.RatePerNight, oldLine.Quantity - request.Quantity, stay);
+        projectedExtra += StayPricing.ExtraCharge(baseRate, request.Quantity, stay);
+        projectedTotal += projectedExtra;
+
         if (paidBefore > projectedTotal)
             return Error.Conflict("booking.paid_exceeds_new_total",
                 $"Guests have already paid {paidBefore:N2}, which exceeds the new total of {projectedTotal:N2}");
@@ -1528,6 +1547,7 @@ public class BookingService(
         {
             mergeTarget.Quantity += request.Quantity;
             mergeTarget.Subtotal = mergeTarget.RatePerNight * nights * mergeTarget.Quantity;
+            mergeTarget.ExtraCharge = StayPricing.ExtraCharge(mergeTarget.RatePerNight, mergeTarget.Quantity, stay);
         }
         else
         {
@@ -1538,7 +1558,8 @@ public class BookingService(
                 Quantity = request.Quantity,
                 RatePerNight = baseRate,
                 NumberOfNights = nights,
-                Subtotal = lineSubtotal
+                Subtotal = lineSubtotal,
+                ExtraCharge = StayPricing.ExtraCharge(baseRate, request.Quantity, stay)
             });
         }
 
@@ -1550,6 +1571,7 @@ public class BookingService(
         else
         {
             oldLine.Subtotal = oldLine.RatePerNight * nights * oldLine.Quantity;
+            oldLine.ExtraCharge = StayPricing.ExtraCharge(oldLine.RatePerNight, oldLine.Quantity, stay);
         }
 
         // Release up to the moved quantity of live assignments belonging to the old line.
@@ -1571,6 +1593,7 @@ public class BookingService(
             .ToListAsync(cancellationToken);
 
         booking.TotalAmount = projectedTotal;
+        booking.ExtraChargeAmount = projectedExtra;
         booking.PaymentStatus = paidBefore <= 0
             ? PaymentStatus.Pending
             : paidBefore >= projectedTotal ? PaymentStatus.Paid : PaymentStatus.PartiallyPaid;
@@ -1591,7 +1614,7 @@ public class BookingService(
                 var updatedTypeIds = updatedLines.Select(l => l.RoomTypeId).ToList();
                 var updatedTypeNames = await db.RoomTypes.Where(rt => updatedTypeIds.Contains(rt.Id)).ToDictionaryAsync(rt => rt.Id, rt => rt.Name, cancellationToken);
                 var roomsForEmail = updatedLines.Select(l => new BookingConfirmationRoom(
-                    updatedTypeNames.GetValueOrDefault(l.RoomTypeId, ""), l.Quantity, l.RatePerNight, l.Subtotal)).ToList();
+                    updatedTypeNames.GetValueOrDefault(l.RoomTypeId, ""), l.Quantity, l.RatePerNight, l.Subtotal, l.ExtraCharge)).ToList();
 
                 var (subject, html, text) = BookingUpdatedEmail.Build(new BookingUpdatedModel(
                     booking.BookingReference,
@@ -1820,7 +1843,8 @@ public class BookingService(
                 l.Quantity,
                 l.RatePerNight,
                 l.NumberOfNights,
-                l.Subtotal)).ToList(),
+                l.Subtotal,
+                l.ExtraCharge)).ToList(),
             assignments.Select(a => new RoomAssignmentResponse(
                 a.Id,
                 a.RoomId,
@@ -1833,7 +1857,8 @@ public class BookingService(
             booking.CreatedAt,
             booking.CancelledAt,
             purgeScheduledAt,
-            hasPayments);
+            hasPayments,
+            booking.ExtraChargeAmount);
     }
 
     /// <summary>

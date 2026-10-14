@@ -95,11 +95,12 @@ public class TimeAwareStayTests(HotelWebApplicationFactory factory) : Integratio
     }
 
     [Fact]
-    public async Task Availability_rejects_a_stay_longer_than_its_nights()
+    public async Task Availability_allows_a_stay_longer_than_its_nights()
     {
         using var client = CreateClient();
         var checkIn = Clock.Today.AddDays(Random.Shared.Next(500, 3000));
 
+        // v1.14: an overstay is now billable, not rejected.
         var response = await client.PostAsJsonAsync("/api/v1/availability/search", new
         {
             checkInDate = checkIn,
@@ -111,7 +112,7 @@ public class TimeAwareStayTests(HotelWebApplicationFactory factory) : Integratio
             rooms = 1
         });
 
-        await AssertProblemAsync(response, (int)HttpStatusCode.BadRequest, "stay.too_long_for_nights");
+        response.EnsureSuccessStatusCode();
     }
 
     [Fact]

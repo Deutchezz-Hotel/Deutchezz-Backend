@@ -25,4 +25,10 @@ public interface ISettingsProvider
     TimeOnly LatestCheckOutTime { get; }
     int MaxExtraHoursPerStay { get; }
     int TurnaroundMinutes { get; }
+
+    // v1.14 late-check-out pricing bands (percentages of the nightly rate).
+    int GraceHours { get; }
+    int HalfDayHours { get; }
+    int HalfDayPercent { get; }
+    int FullNightPercent { get; }
 }

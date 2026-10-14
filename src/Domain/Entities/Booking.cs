@@ -25,6 +25,13 @@ public class Booking : AuditableEntity
     public DateTime? ActualCheckInAt { get; set; }
 
     public int Nights { get; set; }
+
+    /// <summary>
+    /// Late-check-out / overstay surcharge, aggregated across lines and already included in
+    /// <see cref="TotalAmount"/> (v1.14). Zero for ordinary stays.
+    /// </summary>
+    public decimal ExtraChargeAmount { get; set; }
+
     public int Adults { get; set; }
     public int Children { get; set; }
     public BookingStatus Status { get; set; } = BookingStatus.Pending;
