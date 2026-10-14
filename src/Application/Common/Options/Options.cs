@@ -66,6 +66,12 @@ public sealed class SettingsOptions
     public string LatestCheckOutTime { get; set; } = "23:30";
     public int MaxExtraHoursPerStay { get; set; } = 6;
     public int TurnaroundMinutes { get; set; }
+
+    // v1.14 late-check-out pricing bands (percentages of the nightly rate).
+    public int GraceHours { get; set; } = 2;
+    public int HalfDayHours { get; set; } = 6;
+    public int HalfDayPercent { get; set; } = 50;
+    public int FullNightPercent { get; set; } = 100;
 }
 
 public sealed class JobsOptions

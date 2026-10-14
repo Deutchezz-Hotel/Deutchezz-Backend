@@ -94,14 +94,18 @@ public static class EmailLayout
             var rate = showRate
                 ? $"<div style=\"color:#6B5B4B;font-size:13px;\">NGN {r.RatePerNight:N0} / night</div>"
                 : "";
+            var extra = r.ExtraCharge > 0
+                ? $"<div style=\"color:#6B5B4B;font-size:13px;\">includes NGN {r.ExtraCharge:N0} late check-out</div>"
+                : "";
             rows.Append("<tr>")
                 .Append("<td style=\"padding:10px 0;border-bottom:1px solid #E4DAC8;\">")
                 .Append("<div style=\"font-weight:600;color:").Append(Brown).Append(";\">")
                 .Append(name).Append(" &times; ").Append(r.Quantity).Append("</div>")
                 .Append(rate)
+                .Append(extra)
                 .Append("</td>")
                 .Append("<td class=\"amount\" style=\"padding:10px 0;border-bottom:1px solid #E4DAC8;text-align:right;white-space:nowrap;vertical-align:top;\">")
-                .Append(r.Subtotal.ToString("N2"))
+                .Append((r.Subtotal + r.ExtraCharge).ToString("N2"))
                 .Append("</td>")
                 .Append("</tr>");
         }

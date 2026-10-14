@@ -543,4 +543,78 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
         var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
         return await db.Guests.AsNoTracking().FirstAsync(g => g.Id == id);
     }
+
+    // ---------- Late-check-out surcharge (v1.14) ----------
+
+    [Fact]
+    public async Task Walk_in_booking_within_the_grace_window_has_no_extra_charge()
+    {
+        var (token, _, _) = await CreateReceptionistAsync();
+        using var staff = CreateClientWithToken(token);
+        var roomTypeId = await GetRoomTypeIdAsync(staff, "Standard");
+
+        // 1 night, 14:00 -> 14:00 next day = exactly 24h, no overage.
+        var booking = await CreateWalkInWithTimesAsync(staff, roomTypeId, Clock.Today.AddDays(40), "14:00", "14:00");
+
+        Assert.Equal(0m, booking.GetProperty("extraChargeAmount").GetDecimal());
+        Assert.Equal(30000m, booking.GetProperty("totalAmount").GetDecimal());
+        Assert.Equal(0m, booking.GetProperty("lines")[0].GetProperty("extraCharge").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Walk_in_booking_past_the_half_day_mark_charges_half_the_night()
+    {
+        var (token, _, _) = await CreateReceptionistAsync();
+        using var staff = CreateClientWithToken(token);
+        var roomTypeId = await GetRoomTypeIdAsync(staff, "Standard");
+
+        // 1 night, 14:00 -> 19:00 next day = 5h overage -> half-day band = 50% of 30,000.
+        var booking = await CreateWalkInWithTimesAsync(staff, roomTypeId, Clock.Today.AddDays(45), "14:00", "19:00");
+
+        Assert.Equal(15000m, booking.GetProperty("extraChargeAmount").GetDecimal());
+        Assert.Equal(45000m, booking.GetProperty("totalAmount").GetDecimal());
+        Assert.Equal(15000m, booking.GetProperty("lines")[0].GetProperty("extraCharge").GetDecimal());
+
+        var entity = await GetBookingEntityAsync(booking.GetProperty("id").GetGuid());
+        Assert.Equal(15000m, entity.ExtraChargeAmount);
+        Assert.Equal(45000m, entity.TotalAmount);
+    }
+
+    [Fact]
+    public async Task Walk_in_booking_past_the_full_day_mark_charges_a_full_night()
+    {
+        var (token, _, _) = await CreateReceptionistAsync();
+        using var staff = CreateClientWithToken(token);
+        var roomTypeId = await GetRoomTypeIdAsync(staff, "Deluxe");
+
+        // 1 Deluxe night, 14:00 -> 22:00 next day = 8h overage -> full-night band = 40,000.
+        var booking = await CreateWalkInWithTimesAsync(staff, roomTypeId, Clock.Today.AddDays(50), "14:00", "22:00");
+
+        Assert.Equal(40000m, booking.GetProperty("extraChargeAmount").GetDecimal());
+        Assert.Equal(80000m, booking.GetProperty("totalAmount").GetDecimal());
+    }
+
+    private async Task<JsonElement> CreateWalkInWithTimesAsync(
+        HttpClient staff, Guid roomTypeId, DateOnly checkIn, string checkInTime, string checkOutTime)
+    {
+        var message = new HttpRequestMessage(HttpMethod.Post, "/api/v1/reception/bookings")
+        {
+            Content = JsonContent.Create(new
+            {
+                checkInDate = checkIn,
+                checkInTime,
+                checkOutDate = checkIn.AddDays(1),
+                checkOutTime,
+                adults = 1,
+                children = 0,
+                guest = new { firstName = "Late", lastName = "Out", phoneNumber = UniquePhone() },
+                rooms = new[] { new { roomTypeId, quantity = 1 } }
+            })
+        };
+        message.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        var response = await staff.SendAsync(message);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await ReadJsonAsync(response)).GetProperty("booking");
+    }
 }

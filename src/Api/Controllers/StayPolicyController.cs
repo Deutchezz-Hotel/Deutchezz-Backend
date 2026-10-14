@@ -28,7 +28,11 @@ public class StayPolicyController(IStayPolicyService stays) : ControllerBase
             Format(policy.EarliestCheckOutTime),
             Format(policy.LatestCheckOutTime),
             policy.MaxExtraHoursPerStay,
-            policy.TurnaroundMinutes));
+            policy.TurnaroundMinutes,
+            policy.GraceHours,
+            policy.HalfDayHours,
+            policy.HalfDayPercent,
+            policy.FullNightPercent));
     }
 
     private static string Format(TimeOnly time) => time.ToString("HH:mm");
@@ -43,4 +47,8 @@ public sealed record StayPolicyResponse(
     string EarliestCheckOutTime,
     string LatestCheckOutTime,
     int MaxExtraHoursPerStay,
-    int TurnaroundMinutes);
+    int TurnaroundMinutes,
+    int GraceHours,
+    int HalfDayHours,
+    int HalfDayPercent,
+    int FullNightPercent);

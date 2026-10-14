@@ -12,6 +12,7 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(b => b.BookingReference).IsRequired().HasMaxLength(32);
         builder.HasIndex(b => b.BookingReference).IsUnique();
         builder.Property(b => b.TotalAmount).HasColumnType("decimal(18,2)");
+        builder.Property(b => b.ExtraChargeAmount).HasColumnType("decimal(18,2)");
         builder.Property(b => b.Status).HasConversion<string>();
         builder.Property(b => b.PaymentStatus).HasConversion<string>();
         builder.Property(b => b.Source).HasConversion<string>();

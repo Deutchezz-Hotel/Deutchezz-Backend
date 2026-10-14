@@ -45,6 +45,14 @@ public class AppSettingsProvider(
 
     public int TurnaroundMinutes => _settings.TurnaroundMinutes >= 0 ? _settings.TurnaroundMinutes : 0;
 
+    public int GraceHours => _settings.GraceHours >= 0 ? _settings.GraceHours : 2;
+
+    public int HalfDayHours => _settings.HalfDayHours > 0 ? _settings.HalfDayHours : 6;
+
+    public int HalfDayPercent => _settings.HalfDayPercent >= 0 ? _settings.HalfDayPercent : 50;
+
+    public int FullNightPercent => _settings.FullNightPercent >= 0 ? _settings.FullNightPercent : 100;
+
     private static TimeOnly Parse(string value, string fallback) =>
         TimeOnly.TryParse(value, out var time) ? time : TimeOnly.Parse(fallback);
 }

@@ -53,6 +53,10 @@ public static class OptionsExtensions
                 "Settings:MaxRoomsPerBooking must be between 1 and 1000.")
             .Validate(o => TimeOnly.TryParse(o.CheckInTime, out _), "Settings:CheckInTime must be a time such as 14:00.")
             .Validate(o => TimeOnly.TryParse(o.CheckOutTime, out _), "Settings:CheckOutTime must be a time such as 12:00.")
+            .Validate(o => o.GraceHours is >= 0 and <= 24, "Settings:GraceHours must be between 0 and 24.")
+            .Validate(o => o.HalfDayHours is >= 0 and <= 24, "Settings:HalfDayHours must be between 0 and 24.")
+            .Validate(o => o.HalfDayPercent is >= 0 and <= 100, "Settings:HalfDayPercent must be between 0 and 100.")
+            .Validate(o => o.FullNightPercent is >= 0 and <= 100, "Settings:FullNightPercent must be between 0 and 100.")
             .ValidateOnStart();
 
         services.AddOptions<JobsOptions>()

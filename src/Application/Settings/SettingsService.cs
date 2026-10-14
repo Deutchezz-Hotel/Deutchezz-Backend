@@ -22,7 +22,11 @@ public record AdminSettingsResponse(
     string EarliestCheckOutTime,
     string LatestCheckOutTime,
     int MaxExtraHoursPerStay,
-    int TurnaroundMinutes);
+    int TurnaroundMinutes,
+    int GraceHours,
+    int HalfDayHours,
+    int HalfDayPercent,
+    int FullNightPercent);
 
 public record UpdateAdminSettingsRequest(
     int? MaxRoomsPerBooking,
@@ -38,7 +42,11 @@ public record UpdateAdminSettingsRequest(
     string? EarliestCheckOutTime,
     string? LatestCheckOutTime,
     int? MaxExtraHoursPerStay,
-    int? TurnaroundMinutes);
+    int? TurnaroundMinutes,
+    int? GraceHours = null,
+    int? HalfDayHours = null,
+    int? HalfDayPercent = null,
+    int? FullNightPercent = null);
 
 public interface IAdminSettingsService
 {
@@ -66,6 +74,10 @@ public class AdminSettingsService(
     private const string LatestCheckOutTimeKey = "LatestCheckOutTime";
     private const string MaxExtraHoursPerStayKey = "MaxExtraHoursPerStay";
     private const string TurnaroundMinutesKey = "TurnaroundMinutes";
+    private const string GraceHoursKey = "GraceHours";
+    private const string HalfDayHoursKey = "HalfDayHours";
+    private const string HalfDayPercentKey = "HalfDayPercent";
+    private const string FullNightPercentKey = "FullNightPercent";
 
     public async Task<Result<AdminSettingsResponse>> GetAsync(CancellationToken cancellationToken)
     {
@@ -85,7 +97,11 @@ public class AdminSettingsService(
             GetTime(stored, EarliestCheckOutTimeKey, settings.Value.EarliestCheckOutTime),
             GetTime(stored, LatestCheckOutTimeKey, settings.Value.LatestCheckOutTime),
             GetInt(stored, MaxExtraHoursPerStayKey, settings.Value.MaxExtraHoursPerStay),
-            GetInt(stored, TurnaroundMinutesKey, settings.Value.TurnaroundMinutes));
+            GetInt(stored, TurnaroundMinutesKey, settings.Value.TurnaroundMinutes),
+            GetInt(stored, GraceHoursKey, settings.Value.GraceHours),
+            GetInt(stored, HalfDayHoursKey, settings.Value.HalfDayHours),
+            GetInt(stored, HalfDayPercentKey, settings.Value.HalfDayPercent),
+            GetInt(stored, FullNightPercentKey, settings.Value.FullNightPercent));
     }
 
     public async Task<Result<AdminSettingsResponse>> UpdateAsync(
@@ -105,6 +121,14 @@ public class AdminSettingsService(
             return Error.Validation("settings.invalid_max_extra_hours", "MaxExtraHoursPerStay must be between 0 and 720");
         if (request.TurnaroundMinutes is < 0 or > 1440)
             return Error.Validation("settings.invalid_turnaround", "TurnaroundMinutes must be between 0 and 1440");
+        if (request.GraceHours is < 0 or > 24)
+            return Error.Validation("settings.invalid_grace_hours", "GraceHours must be between 0 and 24");
+        if (request.HalfDayHours is < 0 or > 24)
+            return Error.Validation("settings.invalid_half_day_hours", "HalfDayHours must be between 0 and 24");
+        if (request.HalfDayPercent is < 0 or > 100)
+            return Error.Validation("settings.invalid_half_day_percent", "HalfDayPercent must be between 0 and 100");
+        if (request.FullNightPercent is < 0 or > 100)
+            return Error.Validation("settings.invalid_full_night_percent", "FullNightPercent must be between 0 and 100");
         if (request.EarliestCheckInTime is not null && !TimeOnly.TryParse(request.EarliestCheckInTime, out _))
             return Error.Validation("settings.invalid_earliest_check_in_time", "EarliestCheckInTime must be a time such as 00:00");
         if (request.LatestCheckInTime is not null && !TimeOnly.TryParse(request.LatestCheckInTime, out _))
@@ -114,7 +138,7 @@ public class AdminSettingsService(
         if (request.LatestCheckOutTime is not null && !TimeOnly.TryParse(request.LatestCheckOutTime, out _))
             return Error.Validation("settings.invalid_latest_check_out_time", "LatestCheckOutTime must be a time such as 23:30");
 
-        var edits = new List<(string Key, string Value)>(14);
+        var edits = new List<(string Key, string Value)>(18);
 
         if (request.MaxRoomsPerBooking is not null)
             edits.Add((MaxRoomsKey, request.MaxRoomsPerBooking.Value.ToString()));
@@ -144,6 +168,14 @@ public class AdminSettingsService(
             edits.Add((MaxExtraHoursPerStayKey, request.MaxExtraHoursPerStay.Value.ToString()));
         if (request.TurnaroundMinutes is not null)
             edits.Add((TurnaroundMinutesKey, request.TurnaroundMinutes.Value.ToString()));
+        if (request.GraceHours is not null)
+            edits.Add((GraceHoursKey, request.GraceHours.Value.ToString()));
+        if (request.HalfDayHours is not null)
+            edits.Add((HalfDayHoursKey, request.HalfDayHours.Value.ToString()));
+        if (request.HalfDayPercent is not null)
+            edits.Add((HalfDayPercentKey, request.HalfDayPercent.Value.ToString()));
+        if (request.FullNightPercent is not null)
+            edits.Add((FullNightPercentKey, request.FullNightPercent.Value.ToString()));
 
         foreach (var (key, value) in edits)
         {

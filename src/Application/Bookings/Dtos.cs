@@ -73,7 +73,8 @@ public record BookingRoomTypeLineResponse(
     int Quantity,
     decimal RatePerNight,
     int NumberOfNights,
-    decimal Subtotal);
+    decimal Subtotal,
+    decimal ExtraCharge = 0m);
 
 public record RoomAssignmentResponse(
     Guid Id,
@@ -115,7 +116,8 @@ public record BookingDetailResponse(
     DateTime CreatedAt,
     DateTime? CancelledAt = null,
     DateTime? PurgeScheduledAt = null,
-    bool HasPayments = false);
+    bool HasPayments = false,
+    decimal ExtraChargeAmount = 0m);
 
 public record BookingListItemResponse(
     Guid Id,
