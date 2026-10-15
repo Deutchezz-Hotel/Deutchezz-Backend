@@ -17,7 +17,11 @@
   },
   "Seed": {
     "AdminEmail": "admin@example.com",
-    "AdminPassword": "Admin@123456"
+    "AdminPassword": "Admin@123456",
+    "ReceptionistEmail": "receptionist@deutchezz.local",
+    "ReceptionistPassword": "Receptionist@123456",
+    "CustomerEmail": "customer@deutchezz.local",
+    "CustomerPassword": "Customer@123456"
   },
   "Cancellation": { "WindowHours": 24 },
   "Settings": {
