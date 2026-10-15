@@ -1,4 +1,4 @@
-{
+﻿{
   "Logging": {
     "LogLevel": {
       "Default": "Information",
@@ -6,23 +6,81 @@
     }
   },
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=deutchezz_dev;Username=postgres;Password=CHANGE_ME"
+    "DefaultConnection": "Host=localhost;Port=5432;Database=deutchezz;Username=postgres;Password=postgres_dev_password"
   },
-  "Cloudinary": {
-    "CloudName": "",
-    "ApiKey": "",
-    "ApiSecret": ""
+  "Jwt": {
+    "Issuer": "deutchezz-hotel",
+    "Audience": "deutchezz-web",
+    "AccessTokenMinutes": 15,
+    "RefreshTokenDays": 7,
+    "Key": "dev-only-change-me-32-characters-minimum-000000"
+  },
+  "Seed": {
+    "AdminEmail": "admin@example.com",
+    "AdminPassword": "Admin@123456",
+    "ReceptionistEmail": "receptionist@deutchezz.local",
+    "ReceptionistPassword": "Receptionist@123456",
+    "CustomerEmail": "customer@deutchezz.local",
+    "CustomerPassword": "Customer@123456"
+  },
+  "Cancellation": { "WindowHours": 24 },
+  "Settings": {
+    "MaxRoomsPerBooking": 20,
+    "CheckInTime": "14:00",
+    "CheckOutTime": "12:00",
+    "RequireFullPaymentAtCheckIn": false,
+    "RequirePaymentBeforeCheckOut": false,
+    "MaxStayNights": 30,
+    "GraceHours": 2,
+    "CheckOutReminderLeadMinutes": 30,
+    "ReceptionNotificationEmails": ""
+  },
+  "Jobs": {
+    "PendingExpiryIntervalMinutes": 15,
+    "VerificationCleanupIntervalMinutes": 60,
+    "CheckOutReminderIntervalMinutes": 5
+  },
+  "BookingRetention": {
+    "Enabled": true,
+    "CancelledDays": 30,
+    "IntervalMinutes": 60
+  },
+  "Auth": {
+    "CodeMinutes": 15,
+    "ResendCooldownSeconds": 60,
+    "MaxSendsPerHour": 5,
+    "PendingRegistrationHours": 24,
+    "MaxFailedAttempts": 5
+  },
+  "Security": {
+    "OtpHmacKey": "dev-only-change-me-32-characters-minimum-111111"
+  },
+  "Cors": {
+    "AllowedOrigins": ["http://localhost:5173", "http://localhost:3000"]
+  },
+  "RateLimiting": {
+    "Auth": { "PermitLimit": 10, "WindowSeconds": 60 },
+    "Otp": { "PermitLimit": 5, "WindowSeconds": 60 },
+    "Lookup": { "PermitLimit": 5, "WindowSeconds": 60 },
+    "BookingCreate": { "PermitLimit": 10, "WindowSeconds": 60 },
+    "Contact": { "PermitLimit": 5, "WindowSeconds": 60 }
   },
   "Email": {
     "Smtp": {
       "Host": "smtp.gmail.com",
       "Port": 587,
-      "Username": "",
-      "Password": "",
-      "FromAddress": "",
+      "Username": "REPLACE_ME",
+      "Password": "REPLACE_ME",
+      "FromAddress": "REPLACE_ME",
       "FromName": "Deutchezz Hotel Ispahan"
     },
-    "AdminNotificationAddress": "",
-    "FrontendBaseUrl": "http://localhost:5173"
+    "AdminNotificationAddress": "REPLACE_ME",
+    "FrontendBaseUrl": "http://localhost:5173",
+    "RequireConfirmedEmail": false
+  },
+  "Cloudinary": {
+    "CloudName": "REPLACE_ME",
+    "ApiKey": "REPLACE_ME",
+    "ApiSecret": "REPLACE_ME"
   }
 }

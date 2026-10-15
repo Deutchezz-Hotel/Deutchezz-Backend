@@ -15,6 +15,13 @@ secrets.json
 docs/
 CONTINUATION.txt
 AUDIT.md
+scripts
 
 # local dev settings (contains secrets - use the .example template)
 src/appsettings.Development.json
+out/
+
+scripts/
+
+Deut_Source of Truth.txt
+
