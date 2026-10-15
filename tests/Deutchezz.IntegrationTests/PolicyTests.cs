@@ -85,7 +85,10 @@ public class PolicyTests(HotelWebApplicationFactory factory) : IntegrationTestBa
         // Check-in gate on -> still confirmed booking, so it can be retried after disabling.
         await SetGateAsync(staff, "requireFullPaymentAtCheckIn", true);
         var blockedCheckIn = await staff.PostAsync($"/api/v1/reception/bookings/{bookingId}/check-in", content: null);
-        await AssertProblemAsync(blockedCheckIn, (int)HttpStatusCode.Conflict, "booking.balance_outstanding");
+        Assert.Equal(HttpStatusCode.Conflict, blockedCheckIn.StatusCode);
+        var checkInProblem = await ReadProblemAsync(blockedCheckIn);
+        Assert.Equal("booking.payment_required_before_checkin", checkInProblem.GetProperty("code").GetString());
+        Assert.True(checkInProblem.GetProperty("outstandingBalance").GetDecimal() > 0m);
 
         await SetGateAsync(staff, "requireFullPaymentAtCheckIn", false);
         var checkIn = await staff.PostAsync($"/api/v1/reception/bookings/{bookingId}/check-in", content: null);
@@ -94,7 +97,10 @@ public class PolicyTests(HotelWebApplicationFactory factory) : IntegrationTestBa
         // Check-out gate on -> blocked while balance outstanding.
         await SetGateAsync(staff, "requirePaymentBeforeCheckOut", true);
         var blockedCheckOut = await staff.PostAsync($"/api/v1/reception/bookings/{bookingId}/check-out", content: null);
-        await AssertProblemAsync(blockedCheckOut, (int)HttpStatusCode.Conflict, "booking.balance_outstanding");
+        Assert.Equal(HttpStatusCode.Conflict, blockedCheckOut.StatusCode);
+        var checkOutProblem = await ReadProblemAsync(blockedCheckOut);
+        Assert.Equal("booking.payment_required_before_checkout", checkOutProblem.GetProperty("code").GetString());
+        Assert.True(checkOutProblem.GetProperty("outstandingBalance").GetDecimal() > 0m);
 
         await SetGateAsync(staff, "requirePaymentBeforeCheckOut", false);
         var checkOut = await staff.PostAsJsonAsync($"/api/v1/reception/bookings/{bookingId}/check-out", new

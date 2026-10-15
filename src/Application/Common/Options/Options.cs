@@ -64,14 +64,21 @@ public sealed class SettingsOptions
     public string LatestCheckInTime { get; set; } = "23:30";
     public string EarliestCheckOutTime { get; set; } = "00:00";
     public string LatestCheckOutTime { get; set; } = "23:30";
-    public int MaxExtraHoursPerStay { get; set; } = 6;
     public int TurnaroundMinutes { get; set; }
 
-    // v1.14 late-check-out pricing bands (percentages of the nightly rate).
+    // v1.14 duration-based late-check-out pricing.
+    public int MaxStayNights { get; set; } = 30;
     public int GraceHours { get; set; } = 2;
-    public int HalfDayHours { get; set; } = 6;
-    public int HalfDayPercent { get; set; } = 50;
-    public int FullNightPercent { get; set; } = 100;
+
+    // v1.16 check-out reminders: email the front desk shortly before a checked-in stay ends.
+    /// <summary>Minutes before a checked-in booking's scheduled check-out to email the desk.</summary>
+    public int CheckOutReminderLeadMinutes { get; set; } = 30;
+
+    /// <summary>
+    /// Comma/semicolon-separated staff inboxes for check-out reminders. Empty falls back to
+    /// <see cref="EmailOptions.AdminNotificationAddress"/>.
+    /// </summary>
+    public string ReceptionNotificationEmails { get; set; } = string.Empty;
 }
 
 public sealed class JobsOptions
@@ -80,6 +87,7 @@ public sealed class JobsOptions
 
     public int PendingExpiryIntervalMinutes { get; set; } = 15;
     public int VerificationCleanupIntervalMinutes { get; set; } = 60;
+    public int CheckOutReminderIntervalMinutes { get; set; } = 5;
 }
 
 /// <summary>
@@ -143,6 +151,7 @@ public sealed class RateLimitingOptions
     public RateLimitRule Otp { get; set; } = new() { PermitLimit = 5 };
     public RateLimitRule Lookup { get; set; } = new() { PermitLimit = 5 };
     public RateLimitRule BookingCreate { get; set; } = new() { PermitLimit = 10 };
+    public RateLimitRule Contact { get; set; } = new() { PermitLimit = 5 };
 }
 
 public sealed class RateLimitRule

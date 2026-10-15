@@ -17,6 +17,7 @@ public interface IBookingService
     Task<Result<BookingDetailResponse>> AssignRoomsAsync(Guid id, RoomAssignmentRequest request, Guid staffUserId, CancellationToken cancellationToken);
     Task<Result<CheckInResponse>> CheckInAsync(Guid id, Guid staffUserId, CancellationToken cancellationToken);
     Task<Result<CheckOutResponse>> CheckOutAsync(Guid id, CheckOutRequest? request, Guid staffUserId, bool actorIsAdministrator, CancellationToken cancellationToken);
+    Task<Result<LateCheckOutQuote>> QuoteLateCheckOutAsync(Guid id, DateTime? proposedCheckOutUtc, CancellationToken cancellationToken);
     Task<Result<ChangeRoomTypeResponse>> ChangeRoomTypeAsync(Guid id, ChangeRoomTypeRequest request, Guid staffUserId, CancellationToken cancellationToken);
     Task<Result<BookingDetailResponse>> ReassignRoomAsync(Guid id, ReassignRoomRequest request, Guid staffUserId, CancellationToken cancellationToken);
     Task<Result<BookingDetailResponse>> UnassignRoomAsync(Guid id, UnassignRoomRequest request, Guid staffUserId, CancellationToken cancellationToken);

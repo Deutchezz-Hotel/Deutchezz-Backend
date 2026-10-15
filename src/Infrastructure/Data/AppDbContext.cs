@@ -15,6 +15,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<BookingRoomType> BookingRoomTypes => Set<BookingRoomType>();
+    public DbSet<RoomTypeSurchargeTier> RoomTypeSurchargeTiers => Set<RoomTypeSurchargeTier>();
     public DbSet<RoomAssignment> RoomAssignments => Set<RoomAssignment>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Notification> Notifications => Set<Notification>();

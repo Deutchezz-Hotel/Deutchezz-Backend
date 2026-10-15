@@ -92,6 +92,9 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.Property<DateOnly>("CheckOutDate")
                         .HasColumnType("date");
 
+                    b.Property<DateTime?>("CheckOutReminderSentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Children")
                         .HasColumnType("integer");
 
@@ -190,6 +193,10 @@ namespace Deutchezz.Infrastructure.Data.Migrations
 
                     b.Property<decimal>("Subtotal")
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("SurchargeTier")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.HasKey("Id");
 
@@ -577,6 +584,34 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                     b.ToTable("RoomTypes", (string)null);
                 });
 
+            modelBuilder.Entity("Deutchezz.Domain.Entities.RoomTypeSurchargeTier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("FromHours")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("RoomTypeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ToHours")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoomTypeId");
+
+                    b.HasIndex("RoomTypeId", "FromHours")
+                        .IsUnique();
+
+                    b.ToTable("RoomTypeSurchargeTiers", (string)null);
+                });
+
             modelBuilder.Entity("Deutchezz.Domain.Entities.Setting", b =>
                 {
                     b.Property<Guid>("Id")
@@ -832,6 +867,15 @@ namespace Deutchezz.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Deutchezz.Domain.Entities.RoomTypeSurchargeTier", b =>
+                {
+                    b.HasOne("Deutchezz.Domain.Entities.RoomType", null)
+                        .WithMany()
+                        .HasForeignKey("RoomTypeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

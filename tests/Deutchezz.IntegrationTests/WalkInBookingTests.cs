@@ -562,40 +562,41 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
     }
 
     [Fact]
-    public async Task Walk_in_booking_past_the_half_day_mark_charges_half_the_night()
+    public async Task Walk_in_booking_three_hours_late_charges_the_first_standard_tier()
     {
         var (token, _, _) = await CreateReceptionistAsync();
         using var staff = CreateClientWithToken(token);
         var roomTypeId = await GetRoomTypeIdAsync(staff, "Standard");
 
-        // 1 night, 14:00 -> 19:00 next day = 5h overage -> half-day band = 50% of 30,000.
-        var booking = await CreateWalkInWithTimesAsync(staff, roomTypeId, Clock.Today.AddDays(45), "14:00", "19:00");
+        // 1 night, 14:00 -> 17:00 next day = 3h past the booked 24h -> Standard 2-5h tier = 5,000.
+        var booking = await CreateWalkInWithTimesAsync(staff, roomTypeId, Clock.Today.AddDays(45), "14:00", "17:00");
 
-        Assert.Equal(15000m, booking.GetProperty("extraChargeAmount").GetDecimal());
-        Assert.Equal(45000m, booking.GetProperty("totalAmount").GetDecimal());
-        Assert.Equal(15000m, booking.GetProperty("lines")[0].GetProperty("extraCharge").GetDecimal());
+        Assert.Equal(5000m, booking.GetProperty("extraChargeAmount").GetDecimal());
+        Assert.Equal(35000m, booking.GetProperty("totalAmount").GetDecimal());
+        Assert.Equal(5000m, booking.GetProperty("lines")[0].GetProperty("extraCharge").GetDecimal());
 
         var entity = await GetBookingEntityAsync(booking.GetProperty("id").GetGuid());
-        Assert.Equal(15000m, entity.ExtraChargeAmount);
-        Assert.Equal(45000m, entity.TotalAmount);
+        Assert.Equal(5000m, entity.ExtraChargeAmount);
+        Assert.Equal(35000m, entity.TotalAmount);
     }
 
     [Fact]
-    public async Task Walk_in_booking_past_the_full_day_mark_charges_a_full_night()
+    public async Task Walk_in_booking_past_the_last_tier_charges_a_full_night()
     {
         var (token, _, _) = await CreateReceptionistAsync();
         using var staff = CreateClientWithToken(token);
         var roomTypeId = await GetRoomTypeIdAsync(staff, "Deluxe");
 
-        // 1 Deluxe night, 14:00 -> 22:00 next day = 8h overage -> full-night band = 40,000.
-        var booking = await CreateWalkInWithTimesAsync(staff, roomTypeId, Clock.Today.AddDays(50), "14:00", "22:00");
+        // 1 Deluxe night, 00:00 -> 23:30 next day = 47.5h = 23.5h overage, past the last tier -> one
+        // extra full night at 40,000 on top of the booked 40,000.
+        var booking = await CreateWalkInWithTimesAsync(staff, roomTypeId, Clock.Today.AddDays(50), "00:00", "23:30");
 
         Assert.Equal(40000m, booking.GetProperty("extraChargeAmount").GetDecimal());
         Assert.Equal(80000m, booking.GetProperty("totalAmount").GetDecimal());
     }
 
     private async Task<JsonElement> CreateWalkInWithTimesAsync(
-        HttpClient staff, Guid roomTypeId, DateOnly checkIn, string checkInTime, string checkOutTime)
+        HttpClient staff, Guid roomTypeId, DateOnly checkIn, string checkInTime, string checkOutTime, int days = 1)
     {
         var message = new HttpRequestMessage(HttpMethod.Post, "/api/v1/reception/bookings")
         {
@@ -603,7 +604,7 @@ public class WalkInBookingTests(HotelWebApplicationFactory factory) : Integratio
             {
                 checkInDate = checkIn,
                 checkInTime,
-                checkOutDate = checkIn.AddDays(1),
+                checkOutDate = checkIn.AddDays(days),
                 checkOutTime,
                 adults = 1,
                 children = 0,

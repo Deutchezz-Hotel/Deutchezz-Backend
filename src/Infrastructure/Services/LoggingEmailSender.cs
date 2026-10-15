@@ -9,11 +9,11 @@ namespace Deutchezz.Infrastructure.Services;
 /// </summary>
 public class LoggingEmailSender(ILogger<LoggingEmailSender> logger) : IEmailSender
 {
-    public Task SendAsync(string to, string subject, string htmlBody, string? textBody = null, CancellationToken cancellationToken = default)
+    public Task SendAsync(string to, string subject, string htmlBody, string? textBody = null, CancellationToken cancellationToken = default, string? replyTo = null)
     {
         logger.LogInformation(
-            "Email NOT sent (logging fallback) to {To} subject {Subject} htmlLength {Length}",
-            to, subject, htmlBody.Length);
+            "Email NOT sent (logging fallback) to {To} subject {Subject} replyTo {ReplyTo} htmlLength {Length}",
+            to, subject, replyTo ?? "(none)", htmlBody.Length);
         return Task.CompletedTask;
     }
 }

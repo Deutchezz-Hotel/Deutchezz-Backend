@@ -41,17 +41,16 @@ public class AppSettingsProvider(
 
     public TimeOnly LatestCheckOutTime => Parse(_settings.LatestCheckOutTime, "23:30");
 
-    public int MaxExtraHoursPerStay => _settings.MaxExtraHoursPerStay >= 0 ? _settings.MaxExtraHoursPerStay : 6;
-
     public int TurnaroundMinutes => _settings.TurnaroundMinutes >= 0 ? _settings.TurnaroundMinutes : 0;
+
+    public int MaxStayNights => _settings.MaxStayNights > 0 ? _settings.MaxStayNights : 30;
 
     public int GraceHours => _settings.GraceHours >= 0 ? _settings.GraceHours : 2;
 
-    public int HalfDayHours => _settings.HalfDayHours > 0 ? _settings.HalfDayHours : 6;
+    public int CheckOutReminderLeadMinutes =>
+        _settings.CheckOutReminderLeadMinutes > 0 ? _settings.CheckOutReminderLeadMinutes : 30;
 
-    public int HalfDayPercent => _settings.HalfDayPercent >= 0 ? _settings.HalfDayPercent : 50;
-
-    public int FullNightPercent => _settings.FullNightPercent >= 0 ? _settings.FullNightPercent : 100;
+    public string ReceptionNotificationEmails => _settings.ReceptionNotificationEmails ?? string.Empty;
 
     private static TimeOnly Parse(string value, string fallback) =>
         TimeOnly.TryParse(value, out var time) ? time : TimeOnly.Parse(fallback);

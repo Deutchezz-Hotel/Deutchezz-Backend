@@ -104,6 +104,19 @@ public class ReceptionController(
         return result.ToActionResult();
     }
 
+    [HttpPost("bookings/{id:guid}/check-out-quote")]
+    public async Task<IActionResult> QuoteCheckOut(Guid id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] LateCheckOutQuoteRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var userId = this.GetUserId();
+        if (userId is null)
+            return Error.Unauthorized("auth.required", "Authentication is required to access this resource.").ToActionResult();
+
+        var result = await bookings.QuoteLateCheckOutAsync(id, request?.ProposedCheckOutUtc, cancellationToken);
+        return result.ToActionResult();
+    }
+
     [HttpPost("bookings/{id:guid}/change-room-type")]
     public async Task<IActionResult> ChangeRoomType(Guid id, [FromBody] ChangeRoomTypeRequest request, CancellationToken cancellationToken)
     {

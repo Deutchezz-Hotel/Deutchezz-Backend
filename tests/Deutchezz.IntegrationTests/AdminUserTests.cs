@@ -97,7 +97,7 @@ public class AdminUserTests(HotelWebApplicationFactory factory) : IntegrationTes
     }
 
     [Fact]
-    public async Task Promoting_a_customer_moves_them_from_users_to_staff()
+    public async Task A_customer_cannot_be_promoted_to_a_staff_role()
     {
         var customer = await RegisterCustomerAsync();
         var admin = await LoginAsAdminAsync();
@@ -106,17 +106,17 @@ public class AdminUserTests(HotelWebApplicationFactory factory) : IntegrationTes
         using var customerClient = CreateClientWithToken(customer.AccessToken);
         var userId = await GetUserIdAsync(customerClient);
 
-        var change = await adminClient.PatchAsJsonAsync($"/api/v1/admin/users/{userId}/role",
+        var toReceptionist = await adminClient.PatchAsJsonAsync($"/api/v1/admin/users/{userId}/role",
             new { role = "Receptionist" });
-        Assert.Equal(HttpStatusCode.OK, change.StatusCode);
-        Assert.Equal("Receptionist", (await ReadJsonAsync(change)).GetProperty("role").GetString());
+        await AssertProblemAsync(toReceptionist, (int)HttpStatusCode.Conflict, "user.staff_creation_required");
 
+        var toAdministrator = await adminClient.PatchAsJsonAsync($"/api/v1/admin/users/{userId}/role",
+            new { role = "Administrator" });
+        await AssertProblemAsync(toAdministrator, (int)HttpStatusCode.Conflict, "user.staff_creation_required");
+
+        // The account is unchanged: still a customer, still in the customer directory.
         var users = await ListUsersAsync(adminClient, "?pageSize=100");
-        Assert.DoesNotContain(users.GetProperty("items").EnumerateArray(),
-            item => item.GetProperty("id").GetGuid() == userId);
-
-        var staff = await adminClient.GetAsync("/api/v1/admin/staff?pageSize=100");
-        Assert.Contains((await ReadJsonAsync(staff)).GetProperty("items").EnumerateArray(),
+        Assert.Contains(users.GetProperty("items").EnumerateArray(),
             item => item.GetProperty("id").GetGuid() == userId);
     }
 
@@ -153,30 +153,33 @@ public class AdminUserTests(HotelWebApplicationFactory factory) : IntegrationTes
     }
 
     [Fact]
-    public async Task Changing_a_role_revokes_refresh_tokens()
+    public async Task Changing_a_staff_role_revokes_refresh_tokens()
     {
-        var email = $"revoke-{Guid.NewGuid():N}@example.com";
-        var customer = await RegisterCustomerAsync(email: email);
         var admin = await LoginAsAdminAsync();
         using var adminClient = CreateClientWithToken(admin.AccessToken);
 
-        using var customerClient = CreateClientWithToken(customer.AccessToken);
-        var userId = await GetUserIdAsync(customerClient);
+        var email = $"revoke-{Guid.NewGuid():N}@example.com";
+        var staffId = await CreateStaffAsync(adminClient, email, "Receptionist");
+        var staff = await LoginAsync(email, StaffPassword);
 
         // The freshly issued refresh token works before the role change.
-        var before = await customerClient.PostAsJsonAsync("/api/v1/auth/refresh",
-            new { refreshToken = customer.RefreshToken });
+        using var staffClient = CreateClientWithToken(staff.AccessToken);
+        var before = await staffClient.PostAsJsonAsync("/api/v1/auth/refresh",
+            new { refreshToken = staff.RefreshToken });
         before.EnsureSuccessStatusCode();
 
-        var change = await adminClient.PatchAsJsonAsync($"/api/v1/admin/users/{userId}/role",
-            new { role = "Receptionist" });
+        var change = await adminClient.PatchAsJsonAsync($"/api/v1/admin/users/{staffId}/role",
+            new { role = "Administrator" });
         Assert.Equal(HttpStatusCode.OK, change.StatusCode);
 
         // The original refresh token is now revoked.
         using var anon = CreateClient();
         var after = await anon.PostAsJsonAsync("/api/v1/auth/refresh",
-            new { refreshToken = customer.RefreshToken });
+            new { refreshToken = staff.RefreshToken });
         Assert.Equal(HttpStatusCode.Unauthorized, after.StatusCode);
+
+        // Clean up so the suite never accumulates extra administrators.
+        await adminClient.PatchAsJsonAsync($"/api/v1/admin/users/{staffId}/role", new { role = "Customer" });
     }
 
     [Fact]
@@ -239,17 +242,15 @@ public class AdminUserTests(HotelWebApplicationFactory factory) : IntegrationTes
     }
 
     [Fact]
-    public async Task Changing_a_role_writes_an_activity_log_and_emails_the_user()
+    public async Task Changing_a_staff_role_writes_an_activity_log_and_emails_the_user()
     {
-        var email = $"audited-{Guid.NewGuid():N}@example.com";
-        var customer = await RegisterCustomerAsync(email: email);
         var admin = await LoginAsAdminAsync();
         using var client = CreateClientWithToken(admin.AccessToken);
 
-        using var customerClient = CreateClientWithToken(customer.AccessToken);
-        var userId = await GetUserIdAsync(customerClient);
+        var email = $"audited-{Guid.NewGuid():N}@example.com";
+        var staffId = await CreateStaffAsync(client, email, "Receptionist");
 
-        var change = await client.PatchAsJsonAsync($"/api/v1/admin/users/{userId}/role",
+        var change = await client.PatchAsJsonAsync($"/api/v1/admin/users/{staffId}/role",
             new { role = "Administrator" });
         Assert.Equal(HttpStatusCode.OK, change.StatusCode);
 
@@ -257,14 +258,14 @@ public class AdminUserTests(HotelWebApplicationFactory factory) : IntegrationTes
             $"/api/v1/admin/activity-logs?action=user.role_changed&entityType=User&pageSize=100");
         logs.EnsureSuccessStatusCode();
         Assert.Contains((await ReadJsonAsync(logs)).GetProperty("items").EnumerateArray(),
-            item => item.GetProperty("entityId").GetGuid() == userId);
+            item => item.GetProperty("entityId").GetGuid() == staffId);
 
         var notice = EmailSender.LatestFor(email);
         Assert.NotNull(notice);
         Assert.Contains("role", notice!.Subject, StringComparison.OrdinalIgnoreCase);
 
         // Clean up so the suite never accumulates extra administrators.
-        await client.PatchAsJsonAsync($"/api/v1/admin/users/{userId}/role", new { role = "Customer" });
+        await client.PatchAsJsonAsync($"/api/v1/admin/users/{staffId}/role", new { role = "Customer" });
     }
 
     [Fact]
@@ -328,5 +329,31 @@ public class AdminUserTests(HotelWebApplicationFactory factory) : IntegrationTes
         var change = await client.PatchAsJsonAsync($"/api/v1/admin/users/{Guid.NewGuid()}/role",
             new { role = "Administrator" });
         Assert.Equal(HttpStatusCode.Forbidden, change.StatusCode);
+    }
+
+    private const string StaffPassword = "Reception-Test-123!";
+
+    private async Task<Guid> CreateStaffAsync(HttpClient adminClient, string email, string role)
+    {
+        var response = await adminClient.PostAsJsonAsync("/api/v1/admin/staff", new
+        {
+            firstName = "Front",
+            lastName = "Desk",
+            email,
+            password = StaffPassword,
+            role,
+            phoneNumber = UniquePhone()
+        });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await ReadJsonAsync(response)).GetProperty("id").GetGuid();
+    }
+
+    private async Task<LoginResult> LoginAsync(string email, string password)
+    {
+        using var client = CreateClient();
+        var response = await client.PostAsJsonAsync("/api/v1/auth/login", new { email, password });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<LoginResult>()
+            ?? throw new InvalidOperationException("Empty login response");
     }
 }

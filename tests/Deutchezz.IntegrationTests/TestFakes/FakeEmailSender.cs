@@ -23,11 +23,11 @@ public class FakeEmailSender : IEmailSender
         return match.Success ? match.Groups[1].Value : null;
     }
 
-    public Task SendAsync(string to, string subject, string htmlBody, string? textBody = null, CancellationToken cancellationToken = default)
+    public Task SendAsync(string to, string subject, string htmlBody, string? textBody = null, CancellationToken cancellationToken = default, string? replyTo = null)
     {
-        _sent.Add(new SentEmail(to, subject, htmlBody));
+        _sent.Add(new SentEmail(to, subject, htmlBody, textBody, replyTo));
         return Task.CompletedTask;
     }
 
-    public record SentEmail(string To, string Subject, string HtmlBody);
+    public record SentEmail(string To, string Subject, string HtmlBody, string? TextBody = null, string? ReplyTo = null);
 }

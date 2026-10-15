@@ -120,6 +120,13 @@ public class UserAdminService(
         if (!user.IsActive && IsStaff(role))
             return Error.Conflict("user.inactive", "An inactive account cannot be given a staff role.");
 
+        // v1.17: staff accounts are created from the staff dashboard. A customer account may not be
+        // promoted into a staff role here (an account that is already staff may still be switched
+        // between staff roles, or demoted back to Customer).
+        if (string.Equals(currentRole, Roles.Customer, StringComparison.Ordinal) && IsStaff(role))
+            return Error.Conflict("user.staff_creation_required",
+                "Add staff from the Staff page. A customer account cannot be promoted to a staff role.");
+
         if (string.Equals(currentRole, Roles.Administrator, StringComparison.Ordinal)
             && await CountActiveAdministratorsAsync(excluding: user.Id, cancellationToken) == 0)
             return Error.Conflict("user.last_administrator", "The last active administrator cannot be demoted.");

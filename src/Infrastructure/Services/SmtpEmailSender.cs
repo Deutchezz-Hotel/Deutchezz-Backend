@@ -12,7 +12,7 @@ public class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSe
 {
     private const int MaxAttempts = 3;
 
-    public async Task SendAsync(string to, string subject, string htmlBody, string? textBody = null, CancellationToken cancellationToken = default)
+    public async Task SendAsync(string to, string subject, string htmlBody, string? textBody = null, CancellationToken cancellationToken = default, string? replyTo = null)
     {
         var smtp = options.Value.Smtp;
 
@@ -24,6 +24,9 @@ public class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSe
                 message.From.Add(new MailboxAddress(smtp.FromName, smtp.FromAddress));
                 message.To.Add(MailboxAddress.Parse(to));
                 message.Subject = subject;
+
+                if (!string.IsNullOrWhiteSpace(replyTo) && MailboxAddress.TryParse(replyTo, out var replyToAddress))
+                    message.ReplyTo.Add(replyToAddress);
 
                 var builder = new BodyBuilder
                 {

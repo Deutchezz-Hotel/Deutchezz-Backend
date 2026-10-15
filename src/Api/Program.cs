@@ -83,6 +83,8 @@ builder.Services.AddRateLimiter(options =>
         FixedWindowPartition(context, p => p.Lookup.PermitLimit, p => p.Lookup.WindowSeconds));
     options.AddPolicy("booking-create", context =>
         FixedWindowPartition(context, p => p.BookingCreate.PermitLimit, p => p.BookingCreate.WindowSeconds));
+    options.AddPolicy("contact", context =>
+        FixedWindowPartition(context, p => p.Contact.PermitLimit, p => p.Contact.WindowSeconds));
 
     static RateLimitPartition<string> FixedWindowPartition(
         HttpContext context,

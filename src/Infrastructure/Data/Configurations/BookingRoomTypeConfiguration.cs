@@ -13,6 +13,7 @@ public class BookingRoomTypeConfiguration : IEntityTypeConfiguration<BookingRoom
         builder.Property(brt => brt.RatePerNight).HasColumnType("decimal(18,2)");
         builder.Property(brt => brt.Subtotal).HasColumnType("decimal(18,2)");
         builder.Property(brt => brt.ExtraCharge).HasColumnType("decimal(18,2)");
+        builder.Property(brt => brt.SurchargeTier).HasMaxLength(32);
         builder.HasIndex(brt => new { brt.BookingId, brt.RoomTypeId }).IsUnique();
         builder.HasIndex(brt => brt.RoomTypeId);
     }

@@ -26,11 +26,11 @@ public class BookingService(
     IActivityLogger activityLogger,
     ISettingsProvider settings,
     IStayPolicyService stays,
+    IPricingService pricing,
     IStayConflictService conflicts,
     IOptions<EmailOptions> emailOptions,
     IOptions<BookingRetentionOptions> retention) : IBookingService
 {
-    private const int MaxNights = 30;
 
     private static readonly Dictionary<string, Expression<Func<Booking, object>>> Sortable =
         new(StringComparer.OrdinalIgnoreCase)
@@ -70,11 +70,15 @@ public class BookingService(
         var stay = await stays.ResolveAsync(
             request.CheckInDate, request.CheckInTime, request.CheckOutDate, request.CheckOutTime, false, cancellationToken);
         if (stay.IsFailure)
-            return stay.Error;
+            return RemapPastCheckIn(stay.Error);
         var s = stay.Value;
 
-        if (s.Nights > MaxNights)
-            return Error.Validation("booking.too_long", $"Stay cannot exceed {MaxNights} nights");
+        var minimumCheckOut = CheckMinimumCheckOut(s);
+        if (minimumCheckOut is not null)
+            return minimumCheckOut;
+
+        if (s.Nights > s.Policy.MaxStayNights)
+            return Error.Validation("booking.too_long", $"Stay cannot exceed {s.Policy.MaxStayNights} nights");
         if (request.Rooms is null || request.Rooms.Count == 0)
             return Error.Validation("booking.no_rooms", "At least one room type is required");
         if (request.Rooms.Any(r => r.Quantity < 1))
@@ -120,6 +124,32 @@ public class BookingService(
         }
     }
 
+    /// <summary>
+    /// Rule 8 (SoT v1.15): a nightly stay cannot check out before check-in + 24h × nights. The
+    /// default check-out already mirrors the check-in time, so this rejects an explicit earlier one.
+    /// </summary>
+    private static Error? CheckMinimumCheckOut(StayWindow stay)
+    {
+        var minimumCheckOutAt = stay.CheckInAt.AddHours(24L * stay.Nights);
+        if (stay.CheckOutAt >= minimumCheckOutAt)
+            return null;
+
+        return Error.Validation("booking.checkout_too_early",
+            "Check-out must be at least 24 hours after check-in for each booked night. "
+            + "Choose a later check-out time or add a night.");
+    }
+
+    /// <summary>
+    /// Rule 8 (SoT v1.15): a past check-in is rejected by the stay policy as <c>stay.in_the_past</c>;
+    /// booking creation surfaces it under the booking-specific code so the UI can point at the
+    /// check-in field.
+    /// </summary>
+    private static Error RemapPastCheckIn(Error error) =>
+        error.Code == "stay.in_the_past"
+            ? Error.Validation("booking.checkin_in_past",
+                "Check-in time cannot be in the past. Choose the next available time.")
+            : error;
+
     public async Task<Result<CreateBookingResponse>> ReceptionCreateAsync(
         ReceptionCreateBookingRequest request, Guid staffUserId, string idempotencyKey, CancellationToken cancellationToken)
     {
@@ -129,11 +159,15 @@ public class BookingService(
         var stay = await stays.ResolveAsync(
             request.CheckInDate, request.CheckInTime, request.CheckOutDate, request.CheckOutTime, true, cancellationToken);
         if (stay.IsFailure)
-            return stay.Error;
+            return RemapPastCheckIn(stay.Error);
         var s = stay.Value;
 
-        if (s.Nights > MaxNights)
-            return Error.Validation("booking.too_long", $"Stay cannot exceed {MaxNights} nights");
+        var minimumCheckOut = CheckMinimumCheckOut(s);
+        if (minimumCheckOut is not null)
+            return minimumCheckOut;
+
+        if (s.Nights > s.Policy.MaxStayNights)
+            return Error.Validation("booking.too_long", $"Stay cannot exceed {s.Policy.MaxStayNights} nights");
         if (request.Rooms is null || request.Rooms.Count == 0)
             return Error.Validation("booking.no_rooms", "At least one room type is required");
         if (request.Rooms.Any(r => r.Quantity < 1))
@@ -213,24 +247,28 @@ public class BookingService(
         };
         booking.SetStay(s.CheckInDate, s.CheckInTime, s.CheckOutDate, s.CheckOutTime, LagosOffset());
 
+        var tiers = await pricing.GetTiersAsync(roomTypeIds, cancellationToken);
+
         var total = 0m;
         var extraTotal = 0m;
         foreach (var line in request.Rooms)
         {
             var rate = roomTypes[line.RoomTypeId].BasePrice;
-            var subtotal = rate * line.Quantity * nights;
-            var extra = StayPricing.ExtraCharge(rate, line.Quantity, s);
-            total += subtotal + extra;
-            extraTotal += extra;
+            var priced = StayPricing.ComputeLine(
+                rate, line.Quantity, s.Nights, s.Duration, tiers[line.RoomTypeId], s.Policy.GraceHours);
+            var subtotal = rate * line.Quantity * priced.Nights;
+            total += subtotal + priced.OverageAmount;
+            extraTotal += priced.OverageAmount;
             db.BookingRoomTypes.Add(new BookingRoomType
             {
                 BookingId = booking.Id,
                 RoomTypeId = line.RoomTypeId,
                 Quantity = line.Quantity,
                 RatePerNight = rate,
-                NumberOfNights = nights,
+                NumberOfNights = priced.Nights,
                 Subtotal = subtotal,
-                ExtraCharge = extra
+                ExtraCharge = priced.OverageAmount,
+                SurchargeTier = priced.TierLabel
             });
         }
         booking.ExtraChargeAmount = extraTotal;
@@ -255,12 +293,18 @@ public class BookingService(
         if (!string.IsNullOrWhiteSpace(staffEmail))
         {
             var summaryRooms = request.Rooms
-                .Select(r => new BookingConfirmationRoom(
-                    roomTypes[r.RoomTypeId].Name,
-                    r.Quantity,
-                    roomTypes[r.RoomTypeId].BasePrice,
-                    roomTypes[r.RoomTypeId].BasePrice * r.Quantity * nights,
-                    StayPricing.ExtraCharge(roomTypes[r.RoomTypeId].BasePrice, r.Quantity, s)))
+                .Select(r =>
+                {
+                    var priced = StayPricing.ComputeLine(
+                        roomTypes[r.RoomTypeId].BasePrice, r.Quantity, s.Nights, s.Duration,
+                        tiers[r.RoomTypeId], s.Policy.GraceHours);
+                    return new BookingConfirmationRoom(
+                        roomTypes[r.RoomTypeId].Name,
+                        r.Quantity,
+                        roomTypes[r.RoomTypeId].BasePrice,
+                        roomTypes[r.RoomTypeId].BasePrice * r.Quantity * priced.Nights,
+                        priced.OverageAmount);
+                })
                 .ToList();
             var (subject, html, text) = ReceptionBookingSummaryEmail.Build(new ReceptionBookingSummaryModel(
                 booking.BookingReference,
@@ -360,24 +404,28 @@ public class BookingService(
         };
         booking.SetStay(s.CheckInDate, s.CheckInTime, s.CheckOutDate, s.CheckOutTime, LagosOffset());
 
+        var tiers = await pricing.GetTiersAsync(roomTypeIds, cancellationToken);
+
         var total = 0m;
         var extraTotal = 0m;
         foreach (var line in request.Rooms)
         {
             var rate = roomTypes[line.RoomTypeId].BasePrice;
-            var subtotal = rate * line.Quantity * nights;
-            var extra = StayPricing.ExtraCharge(rate, line.Quantity, s);
-            total += subtotal + extra;
-            extraTotal += extra;
+            var priced = StayPricing.ComputeLine(
+                rate, line.Quantity, s.Nights, s.Duration, tiers[line.RoomTypeId], s.Policy.GraceHours);
+            var subtotal = rate * line.Quantity * priced.Nights;
+            total += subtotal + priced.OverageAmount;
+            extraTotal += priced.OverageAmount;
             db.BookingRoomTypes.Add(new BookingRoomType
             {
                 BookingId = booking.Id,
                 RoomTypeId = line.RoomTypeId,
                 Quantity = line.Quantity,
                 RatePerNight = rate,
-                NumberOfNights = nights,
+                NumberOfNights = priced.Nights,
                 Subtotal = subtotal,
-                ExtraCharge = extra
+                ExtraCharge = priced.OverageAmount,
+                SurchargeTier = priced.TierLabel
             });
         }
         booking.ExtraChargeAmount = extraTotal;
@@ -407,11 +455,18 @@ public class BookingService(
             $"Booking {booking.BookingReference} created for {request.Guest.Email}", cancellationToken);
 
         var emailRooms = request.Rooms
-            .Select(r => new BookingConfirmationRoom(
-                roomTypes[r.RoomTypeId].Name,
-                r.Quantity,
-                roomTypes[r.RoomTypeId].BasePrice,
-                roomTypes[r.RoomTypeId].BasePrice * r.Quantity * nights))
+            .Select(r =>
+            {
+                var priced = StayPricing.ComputeLine(
+                    roomTypes[r.RoomTypeId].BasePrice, r.Quantity, s.Nights, s.Duration,
+                    tiers[r.RoomTypeId], s.Policy.GraceHours);
+                return new BookingConfirmationRoom(
+                    roomTypes[r.RoomTypeId].Name,
+                    r.Quantity,
+                    roomTypes[r.RoomTypeId].BasePrice,
+                    roomTypes[r.RoomTypeId].BasePrice * r.Quantity * priced.Nights,
+                    priced.OverageAmount);
+            })
             .ToList();
         var (subject, html, text) = BookingConfirmationEmail.Build(new BookingConfirmationModel(
             booking.BookingReference,
@@ -1235,8 +1290,12 @@ public class BookingService(
         {
             var paid = await PaidAmountAsync(booking.Id, cancellationToken);
             if (paid < booking.TotalAmount)
-                return Error.Conflict("booking.balance_outstanding",
-                    "The outstanding balance for this booking must be settled before check-in");
+                return Error.Conflict("booking.payment_required_before_checkin",
+                    "This booking has an outstanding balance. Record the payment, then check the guest in.")
+                    .WithExtensions(new Dictionary<string, object?>
+                    {
+                        ["outstandingBalance"] = booking.TotalAmount - paid
+                    });
         }
 
         var lines = await db.BookingRoomTypes.Where(brt => brt.BookingId == id).ToListAsync(cancellationToken);
@@ -1352,19 +1411,29 @@ public class BookingService(
         if (booking.Status != BookingStatus.CheckedIn)
             return Error.Conflict("booking.invalid_state", $"Only checked-in bookings can be checked out (current: {booking.Status})");
 
+        var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+        var scheduledUtc = booking.CheckOutAt;
+        var isEarly = nowUtc < scheduledUtc;
+
+        // v1.14: an actual late check-out is charged with the same duration-based pricing service as a
+        // pre-booked extended stay. The fee is snapshotted onto the lines and folded into the total
+        // before the balance gate, then settled through the normal "record payment" flow.
+        if (nowUtc > scheduledUtc)
+            await ApplyLateCheckOutChargeAsync(booking, nowUtc, cancellationToken);
+
         // 7f: optional gate blocking check-out while a balance is outstanding (off by default).
-        // The balance gate is evaluated before the early check-out rule.
+        // The balance gate is evaluated after any late-check-out fee is added.
         if (await BoolSettingAsync("RequirePaymentBeforeCheckOut", settings.RequirePaymentBeforeCheckOut, cancellationToken))
         {
             var paid = await PaidAmountAsync(booking.Id, cancellationToken);
             if (paid < booking.TotalAmount)
-                return Error.Conflict("booking.balance_outstanding",
-                    "The outstanding balance for this booking must be settled before check-out");
+                return Error.Conflict("booking.payment_required_before_checkout",
+                    "This booking has an outstanding balance. Record the payment, then check the guest out.")
+                    .WithExtensions(new Dictionary<string, object?>
+                    {
+                        ["outstandingBalance"] = booking.TotalAmount - paid
+                    });
         }
-
-        var nowUtc = DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
-        var scheduledUtc = booking.CheckOutAt;
-        var isEarly = nowUtc < scheduledUtc;
 
         string? earlyReason = null;
         string? earlyNotes = null;
@@ -1459,6 +1528,114 @@ public class BookingService(
             booking.ActualCheckOutAt.Value);
     }
 
+    /// <summary>
+    /// Reprices a booking's lines for an actual (late) check-out instant using the duration-based
+    /// pricing service, so extra time is charged through the same tier rules as a pre-booked
+    /// extended stay. Mutates the tracked lines and booking totals; the caller persists them.
+    /// </summary>
+    private async Task ApplyLateCheckOutChargeAsync(
+        Booking booking, DateTime actualCheckOutAt, CancellationToken cancellationToken)
+    {
+        var lines = await db.BookingRoomTypes
+            .Where(l => l.BookingId == booking.Id)
+            .ToListAsync(cancellationToken);
+        if (lines.Count == 0)
+            return;
+
+        var policy = await stays.GetPolicyAsync(cancellationToken);
+        var tiers = await pricing.GetTiersAsync(lines.Select(l => l.RoomTypeId), cancellationToken);
+        var duration = actualCheckOutAt - booking.CheckInAt;
+
+        var extraTotal = 0m;
+        var grandTotal = 0m;
+        foreach (var line in lines)
+        {
+            var priced = StayPricing.ComputeLine(
+                line.RatePerNight, line.Quantity, booking.Nights, duration, tiers[line.RoomTypeId], policy.GraceHours);
+            line.NumberOfNights = priced.Nights;
+            line.Subtotal = line.RatePerNight * line.Quantity * priced.Nights;
+            line.ExtraCharge = priced.OverageAmount;
+            line.SurchargeTier = priced.TierLabel;
+            extraTotal += priced.OverageAmount;
+            grandTotal += line.Subtotal + line.ExtraCharge;
+        }
+
+        booking.ExtraChargeAmount = extraTotal;
+        booking.TotalAmount = grandTotal;
+        booking.PaymentStatus = await RecomputePaymentStatusAsync(booking, cancellationToken);
+    }
+
+    private async Task<PaymentStatus> RecomputePaymentStatusAsync(Booking booking, CancellationToken cancellationToken)
+    {
+        var paid = await PaidAmountAsync(booking.Id, cancellationToken);
+        return paid <= 0
+            ? PaymentStatus.Pending
+            : paid >= booking.TotalAmount ? PaymentStatus.Paid : PaymentStatus.PartiallyPaid;
+    }
+
+    public async Task<Result<LateCheckOutQuote>> QuoteLateCheckOutAsync(
+        Guid id, DateTime? proposedCheckOutUtc, CancellationToken cancellationToken)
+    {
+        var booking = await db.Bookings.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        if (booking is null)
+            return Error.NotFound("booking.not_found", "Booking not found");
+        if (booking.Status != BookingStatus.CheckedIn)
+            return Error.Conflict("booking.invalid_state", "Only checked-in bookings can be quoted for check-out");
+
+        var lines = await db.BookingRoomTypes
+            .Where(l => l.BookingId == id)
+            .ToListAsync(cancellationToken);
+        var roomTypeNames = await db.RoomTypes
+            .Where(rt => lines.Select(l => l.RoomTypeId).Contains(rt.Id))
+            .ToDictionaryAsync(rt => rt.Id, rt => rt.Name, cancellationToken);
+
+        var at = proposedCheckOutUtc.HasValue
+            ? DateTime.SpecifyKind(proposedCheckOutUtc.Value, DateTimeKind.Utc)
+            : DateTime.SpecifyKind(clock.UtcNow, DateTimeKind.Utc);
+        var scheduledUtc = booking.CheckOutAt;
+        var isLate = at > scheduledUtc;
+        var effective = isLate ? at : scheduledUtc;
+        var duration = effective - booking.CheckInAt;
+
+        var policy = await stays.GetPolicyAsync(cancellationToken);
+        var tiers = await pricing.GetTiersAsync(lines.Select(l => l.RoomTypeId), cancellationToken);
+
+        var quoteLines = new List<LateCheckOutQuoteLine>(lines.Count);
+        var projectedTotal = 0m;
+        foreach (var line in lines)
+        {
+            var priced = StayPricing.ComputeLine(
+                line.RatePerNight, line.Quantity, booking.Nights, duration, tiers[line.RoomTypeId], policy.GraceHours);
+            var lineTotal = line.RatePerNight * line.Quantity * priced.Nights + priced.OverageAmount;
+            projectedTotal += lineTotal;
+            quoteLines.Add(new LateCheckOutQuoteLine(
+                line.Id,
+                roomTypeNames.TryGetValue(line.RoomTypeId, out var name) ? name : string.Empty,
+                line.Quantity,
+                line.RatePerNight,
+                priced.Nights,
+                priced.OverageMinutes,
+                priced.TierLabel,
+                priced.OverageAmount));
+        }
+
+        var additional = projectedTotal - booking.TotalAmount;
+        if (additional < 0)
+            additional = 0m;
+
+        return new LateCheckOutQuote(
+            booking.Id,
+            booking.BookingReference,
+            scheduledUtc,
+            at,
+            isLate,
+            isLate ? (int)Math.Floor((at - scheduledUtc).TotalMinutes) : 0,
+            quoteLines,
+            additional,
+            booking.TotalAmount,
+            booking.TotalAmount + additional);
+    }
+
     public async Task<Result<ChangeRoomTypeResponse>> ChangeRoomTypeAsync(
         Guid id, ChangeRoomTypeRequest request, Guid staffUserId, CancellationToken cancellationToken)
     {
@@ -1489,7 +1666,6 @@ public class BookingService(
 
         var involvedRoomTypeIds = new[] { oldLine.RoomTypeId, request.NewRoomTypeId }.Distinct().OrderBy(x => x).ToList();
 
-        var nights = booking.Nights;
         var paidBefore = await PaidAmountAsync(id, cancellationToken);
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -1519,21 +1695,31 @@ public class BookingService(
             return Error.Conflict("booking.unavailable",
                 $"Only {Math.Max(0, free)} room(s) of '{newType.Name}' are available for these dates");
 
-        // Project the new total BEFORE mutating so the paid-exceeds-new-total check can run.
-        var baseRate = newType.BasePrice;
-        var lineSubtotal = baseRate * nights * request.Quantity;
-        var projectedTotal = lines.Where(l => l.Id != oldLine.Id).Sum(l => l.Subtotal);
-        if (oldLine.Quantity - request.Quantity > 0)
-            projectedTotal += oldLine.RatePerNight * nights * (oldLine.Quantity - request.Quantity);
-        projectedTotal += lineSubtotal;
+        // Project the new total BEFORE mutating so the paid-exceeds-new-total check can run. The
+        // stay's duration and the surcharge tiers drive the price (v1.14), never the calendar nights.
+        var tiers = await pricing.GetTiersAsync(
+            new[] { oldLine.RoomTypeId, newType.Id }, cancellationToken);
+        var graceHours = stay.Policy.GraceHours;
+        var duration = stay.Duration;
 
-        // v1.14: keep the late-check-out surcharge in step with the reshaped lines.
+        var baseRate = newType.BasePrice;
+        var newPriced = StayPricing.ComputeLine(baseRate, request.Quantity, stay.Nights, duration, tiers[newType.Id], graceHours);
+        var lineSubtotal = baseRate * request.Quantity * newPriced.Nights;
+
+        var keepQty = oldLine.Quantity - request.Quantity;
+        var keepPriced = keepQty > 0
+            ? StayPricing.ComputeLine(oldLine.RatePerNight, keepQty, stay.Nights, duration, tiers[oldLine.RoomTypeId], graceHours)
+            : null;
+
+        var projectedTotal = lines.Where(l => l.Id != oldLine.Id).Sum(l => l.Subtotal + l.ExtraCharge);
+        if (keepPriced is not null)
+            projectedTotal += oldLine.RatePerNight * keepQty * keepPriced.Nights + keepPriced.OverageAmount;
+        projectedTotal += lineSubtotal + newPriced.OverageAmount;
+
         var projectedExtra = lines.Where(l => l.Id != oldLine.Id).Sum(l => l.ExtraCharge);
-        if (oldLine.Quantity - request.Quantity > 0)
-            projectedExtra += StayPricing.ExtraCharge(
-                oldLine.RatePerNight, oldLine.Quantity - request.Quantity, stay);
-        projectedExtra += StayPricing.ExtraCharge(baseRate, request.Quantity, stay);
-        projectedTotal += projectedExtra;
+        if (keepPriced is not null)
+            projectedExtra += keepPriced.OverageAmount;
+        projectedExtra += newPriced.OverageAmount;
 
         if (paidBefore > projectedTotal)
             return Error.Conflict("booking.paid_exceeds_new_total",
@@ -1546,8 +1732,12 @@ public class BookingService(
         if (mergeTarget is not null)
         {
             mergeTarget.Quantity += request.Quantity;
-            mergeTarget.Subtotal = mergeTarget.RatePerNight * nights * mergeTarget.Quantity;
-            mergeTarget.ExtraCharge = StayPricing.ExtraCharge(mergeTarget.RatePerNight, mergeTarget.Quantity, stay);
+            var merged = StayPricing.ComputeLine(
+                mergeTarget.RatePerNight, mergeTarget.Quantity, stay.Nights, duration, tiers[newType.Id], graceHours);
+            mergeTarget.NumberOfNights = merged.Nights;
+            mergeTarget.Subtotal = mergeTarget.RatePerNight * mergeTarget.Quantity * merged.Nights;
+            mergeTarget.ExtraCharge = merged.OverageAmount;
+            mergeTarget.SurchargeTier = merged.TierLabel;
         }
         else
         {
@@ -1557,9 +1747,10 @@ public class BookingService(
                 RoomTypeId = newType.Id,
                 Quantity = request.Quantity,
                 RatePerNight = baseRate,
-                NumberOfNights = nights,
+                NumberOfNights = newPriced.Nights,
                 Subtotal = lineSubtotal,
-                ExtraCharge = StayPricing.ExtraCharge(baseRate, request.Quantity, stay)
+                ExtraCharge = newPriced.OverageAmount,
+                SurchargeTier = newPriced.TierLabel
             });
         }
 
@@ -1570,8 +1761,10 @@ public class BookingService(
         }
         else
         {
-            oldLine.Subtotal = oldLine.RatePerNight * nights * oldLine.Quantity;
-            oldLine.ExtraCharge = StayPricing.ExtraCharge(oldLine.RatePerNight, oldLine.Quantity, stay);
+            oldLine.NumberOfNights = keepPriced!.Nights;
+            oldLine.Subtotal = oldLine.RatePerNight * oldLine.Quantity * keepPriced.Nights;
+            oldLine.ExtraCharge = keepPriced.OverageAmount;
+            oldLine.SurchargeTier = keepPriced.TierLabel;
         }
 
         // Release up to the moved quantity of live assignments belonging to the old line.

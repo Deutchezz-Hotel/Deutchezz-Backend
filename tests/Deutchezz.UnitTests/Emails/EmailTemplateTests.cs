@@ -47,6 +47,10 @@ public class EmailTemplateTests
             ReceptionBookingSummaryEmail.Build(new ReceptionBookingSummaryModel(Ref, "Walk In", "+2348031234567", date, new TimeOnly(14, 0), date.AddDays(2), new TimeOnly(12, 0), 2, Rooms, 220000m)));
         yield return Row("staff-new-booking-alert",
             StaffNewBookingAlertEmail.Build(new StaffNewBookingAlertModel(Ref, "Ada Obi", "ada@example.com", "+2348031234567", date, new TimeOnly(14, 0), date.AddDays(2), new TimeOnly(12, 0), 2, Rooms, 220000m)));
+        yield return Row("check-out-reminder",
+            CheckOutReminderEmail.Build(new CheckOutReminderModel(Ref, "Ada Obi", "+2348031234567", ["101", "102"], date, new TimeOnly(12, 0), 30)));
+        yield return Row("contact-message",
+            ContactMessageEmail.Build(new ContactMessageModel("Ada Obi", "ada@example.com", "Hello, I would like to ask about room availability for December.", new DateTimeOffset(2026, 11, 1, 9, 30, 0, TimeSpan.Zero))));
     }
 
     private static object[] Row(string slug, (string Subject, string Html, string Text) email) =>
@@ -90,6 +94,32 @@ public class EmailTemplateTests
 
         Assert.DoesNotContain("<script", host.Html);
         Assert.Contains("&lt;script&gt;", host.Html);
+    }
+
+    [Fact]
+    public void Check_out_reminder_encodes_guest_supplied_values()
+    {
+        var host = CheckOutReminderEmail.Build(new CheckOutReminderModel(
+            "<script>alert('x')</script>", "<b>Ada</b>", "+2348031234567", ["<script>101</script>"],
+            new DateOnly(2026, 11, 3), new TimeOnly(12, 0), 30));
+
+        Assert.DoesNotContain("<script", host.Html);
+        Assert.Contains("&lt;script&gt;", host.Html);
+        Assert.Contains("&lt;b&gt;Ada&lt;/b&gt;", host.Html);
+    }
+
+    [Fact]
+    public void Contact_message_encodes_visitor_supplied_values()
+    {
+        var host = ContactMessageEmail.Build(new ContactMessageModel(
+            "<script>alert('x')</script>", "ada@example.com", "<b>line one</b>\n<script>alert(1)</script>",
+            new DateTimeOffset(2026, 11, 1, 9, 30, 0, TimeSpan.Zero)));
+
+        Assert.DoesNotContain("<script", host.Html);
+        Assert.Contains("&lt;script&gt;", host.Html);
+        Assert.Contains("&lt;b&gt;line one&lt;/b&gt;", host.Html);
+        // Newlines in the message become <br> so paragraphs survive.
+        Assert.Contains("<br>", host.Html);
     }
 
     [Fact]

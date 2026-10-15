@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Deutchezz.Application.Abstractions;
 using Deutchezz.Application.Common;
 using Deutchezz.Application.Data;
+using Deutchezz.Application.Stays;
 using Deutchezz.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 
@@ -94,6 +95,21 @@ public class RoomTypesService(IAppDbContext db, IActivityLogger activityLogger) 
             IsActive = true
         };
         db.RoomTypes.Add(roomType);
+
+        // v1.14: every new room type starts with the default late-check-out tier table so a
+        // late check-out is priced the same way as a seeded type (otherwise any overage would
+        // fall back to a full night). Admins can adjust the amounts later.
+        foreach (var tier in StayPricing.DefaultTiersFor(roomType.Name))
+        {
+            db.RoomTypeSurchargeTiers.Add(new Domain.Entities.RoomTypeSurchargeTier
+            {
+                RoomTypeId = roomType.Id,
+                FromHours = tier.FromHours,
+                ToHours = tier.ToHours,
+                Amount = tier.Amount
+            });
+        }
+
         await db.SaveChangesAsync(cancellationToken);
 
         await activityLogger.LogAsync(adminUserId, "roomtype.created", "RoomType", roomType.Id,
