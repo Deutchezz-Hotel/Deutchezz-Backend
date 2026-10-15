@@ -157,6 +157,36 @@ public record CheckOutResponse(
     DateTime ScheduledCheckOutAt,
     DateTime ActualCheckOutAt);
 
+/// <summary>One room-type line inside a prospective / actual late-check-out quote (v1.14).</summary>
+public record LateCheckOutQuoteLine(
+    Guid BookingRoomTypeId,
+    string RoomTypeName,
+    int Quantity,
+    decimal RatePerNight,
+    int Nights,
+    int OverageMinutes,
+    string? TierLabel,
+    decimal ExtraCharge);
+
+/// <summary>Optional override for the check-out instant when quoting a late check-out (v1.14).</summary>
+public record LateCheckOutQuoteRequest(DateTime? ProposedCheckOutUtc);
+
+/// <summary>
+/// A quote for checking a guest out at a proposed instant (v1.14). <see cref="AdditionalCharge"/> is
+/// the extra amount owed on top of the current total; it is zero for an on-time (or early) check-out.
+/// </summary>
+public record LateCheckOutQuote(
+    Guid BookingId,
+    string BookingReference,
+    DateTime ScheduledCheckOutAt,
+    DateTime ProposedCheckOutAt,
+    bool IsLate,
+    int LateMinutes,
+    List<LateCheckOutQuoteLine> Lines,
+    decimal AdditionalCharge,
+    decimal CurrentTotal,
+    decimal ProjectedTotal);
+
 public record ChangeRoomTypeRequest(Guid BookingRoomTypeId, Guid NewRoomTypeId, int Quantity);
 
 public record ChangeRoomTypeResponse(BookingDetailResponse Booking, List<string> AssignmentsCleared);

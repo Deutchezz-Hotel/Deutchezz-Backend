@@ -20,7 +20,6 @@ public class TimeAwareStayTests(HotelWebApplicationFactory factory) : Integratio
         Assert.Equal("12:00", body.GetProperty("defaultCheckOutTime").GetString());
         Assert.Equal(30, body.GetProperty("timeSlotMinutes").GetInt32());
         Assert.Equal(0, body.GetProperty("turnaroundMinutes").GetInt32());
-        Assert.Equal(6, body.GetProperty("maxExtraHoursPerStay").GetInt32());
     }
 
     [Fact]
@@ -71,7 +70,8 @@ public class TimeAwareStayTests(HotelWebApplicationFactory factory) : Integratio
 
         var body = await ReadJsonAsync(response);
         Assert.Equal("14:00", body.GetProperty("checkInTime").GetString());
-        Assert.Equal("12:00", body.GetProperty("checkOutTime").GetString());
+        // v1.15: an omitted check-out time mirrors the check-in time (check-in + 24h × nights).
+        Assert.Equal("14:00", body.GetProperty("checkOutTime").GetString());
     }
 
     [Fact]

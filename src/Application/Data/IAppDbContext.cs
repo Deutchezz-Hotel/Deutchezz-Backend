@@ -15,6 +15,7 @@ public interface IAppDbContext
     DbSet<Room> Rooms { get; }
     DbSet<Booking> Bookings { get; }
     DbSet<BookingRoomType> BookingRoomTypes { get; }
+    DbSet<RoomTypeSurchargeTier> RoomTypeSurchargeTiers { get; }
     DbSet<RoomAssignment> RoomAssignments { get; }
     DbSet<Payment> Payments { get; }
     DbSet<Notification> Notifications { get; }

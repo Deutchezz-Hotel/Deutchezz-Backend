@@ -53,10 +53,10 @@ public static class OptionsExtensions
                 "Settings:MaxRoomsPerBooking must be between 1 and 1000.")
             .Validate(o => TimeOnly.TryParse(o.CheckInTime, out _), "Settings:CheckInTime must be a time such as 14:00.")
             .Validate(o => TimeOnly.TryParse(o.CheckOutTime, out _), "Settings:CheckOutTime must be a time such as 12:00.")
+            .Validate(o => o.MaxStayNights is >= 1 and <= 365, "Settings:MaxStayNights must be between 1 and 365.")
             .Validate(o => o.GraceHours is >= 0 and <= 24, "Settings:GraceHours must be between 0 and 24.")
-            .Validate(o => o.HalfDayHours is >= 0 and <= 24, "Settings:HalfDayHours must be between 0 and 24.")
-            .Validate(o => o.HalfDayPercent is >= 0 and <= 100, "Settings:HalfDayPercent must be between 0 and 100.")
-            .Validate(o => o.FullNightPercent is >= 0 and <= 100, "Settings:FullNightPercent must be between 0 and 100.")
+            .Validate(o => o.CheckOutReminderLeadMinutes is >= 5 and <= 2880,
+                "Settings:CheckOutReminderLeadMinutes must be between 5 and 2880.")
             .ValidateOnStart();
 
         services.AddOptions<JobsOptions>()
@@ -65,6 +65,8 @@ public static class OptionsExtensions
                 "Jobs:PendingExpiryIntervalMinutes must be greater than 0.")
             .Validate(o => o.VerificationCleanupIntervalMinutes > 0,
                 "Jobs:VerificationCleanupIntervalMinutes must be greater than 0.")
+            .Validate(o => o.CheckOutReminderIntervalMinutes > 0,
+                "Jobs:CheckOutReminderIntervalMinutes must be greater than 0.")
             .ValidateOnStart();
 
         services.AddOptions<BookingRetentionOptions>()
@@ -106,6 +108,7 @@ public static class OptionsExtensions
             .Validate(o => o.Otp.PermitLimit > 0 && o.Otp.WindowSeconds > 0, "RateLimiting:Otp PermitLimit/WindowSeconds must be positive.")
             .Validate(o => o.Lookup.PermitLimit > 0 && o.Lookup.WindowSeconds > 0, "RateLimiting:Lookup PermitLimit/WindowSeconds must be positive.")
             .Validate(o => o.BookingCreate.PermitLimit > 0 && o.BookingCreate.WindowSeconds > 0, "RateLimiting:BookingCreate PermitLimit/WindowSeconds must be positive.")
+            .Validate(o => o.Contact.PermitLimit > 0 && o.Contact.WindowSeconds > 0, "RateLimiting:Contact PermitLimit/WindowSeconds must be positive.")
             .ValidateOnStart();
 
         services.AddOptions<EmailOptions>()

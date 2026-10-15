@@ -95,7 +95,7 @@ public static class EmailLayout
                 ? $"<div style=\"color:#6B5B4B;font-size:13px;\">NGN {r.RatePerNight:N0} / night</div>"
                 : "";
             var extra = r.ExtraCharge > 0
-                ? $"<div style=\"color:#6B5B4B;font-size:13px;\">includes NGN {r.ExtraCharge:N0} late check-out</div>"
+                ? $"<div style=\"color:#6B5B4B;font-size:13px;\">includes NGN {r.ExtraCharge:N0} extended stay</div>"
                 : "";
             rows.Append("<tr>")
                 .Append("<td style=\"padding:10px 0;border-bottom:1px solid #E4DAC8;\">")

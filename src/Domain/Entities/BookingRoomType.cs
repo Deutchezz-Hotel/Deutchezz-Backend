@@ -12,10 +12,17 @@ public class BookingRoomType : BaseEntity
     public decimal Subtotal { get; set; }
 
     /// <summary>
-    /// Late-check-out surcharge for this line (v1.14), part of the booking's total. When the
-    /// stay's overage falls in the half-day band this is <c>HalfDayPercent</c> of
-    /// <see cref="RatePerNight"/> × <see cref="Quantity"/>; past the full-night band it is
-    /// <c>FullNightPercent</c> of the same. Zero within the grace window.
+    /// Overstay surcharge for this line (v1.14), part of the booking's total. The stay is billed as
+    /// <see cref="NumberOfNights"/> whole 24-hour blocks (captured in <see cref="Subtotal"/>) plus
+    /// the remainder, which is free inside the grace window, charged a fixed tier amount, or charged
+    /// one additional full nightly rate. The applied tier is snapshotted in <see cref="SurchargeTier"/>.
     /// </summary>
     public decimal ExtraCharge { get; set; }
+
+    /// <summary>
+    /// Snapshot of the fixed-amount band applied to this line (v1.14), e.g. "5-10h" or "full-night";
+    /// null when the remainder fell inside the grace window. Kept so historical lines never change
+    /// when the tier table is later edited.
+    /// </summary>
+    public string? SurchargeTier { get; set; }
 }

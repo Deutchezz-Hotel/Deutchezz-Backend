@@ -2,6 +2,7 @@ using Deutchezz.Application.ActivityLogs;
 using Deutchezz.Application.Auth;
 using Deutchezz.Application.Availability;
 using Deutchezz.Application.Bookings;
+using Deutchezz.Application.Contact;
 using Deutchezz.Application.Guests;
 using Deutchezz.Application.Notifications;
 using Deutchezz.Application.Payments;
@@ -37,10 +38,13 @@ public static class DependencyInjection
         services.AddScoped<IReportsService, ReportsService>();
         services.AddScoped<IActivityLogsService, ActivityLogsService>();
         services.AddScoped<IStayPolicyService, StayPolicyService>();
+        services.AddScoped<IPricingService, PricingService>();
         services.AddScoped<IStayConflictService, StayConflictService>();
+        services.AddScoped<IContactService, ContactService>();
         services.AddHostedService<PendingBookingExpiryWorker>();
         services.AddHostedService<PendingRegistrationCleanupWorker>();
         services.AddHostedService<CancelledBookingPurgeWorker>();
+        services.AddHostedService<CheckOutReminderWorker>();
         return services;
     }
 }

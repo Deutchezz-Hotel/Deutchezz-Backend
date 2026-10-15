@@ -1,4 +1,5 @@
 using Deutchezz.Application.Common.Options;
+using Deutchezz.Application.Stays;
 using Deutchezz.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -126,6 +127,23 @@ public static class Seeder
         // The seed only creates missing rows and never updates existing ones, so later
         // admin edits survive restarts. Prices are per night in NGN.
         context.RoomTypes.AddRange(standard, deluxe, executive);
+        await context.SaveChangesAsync();
+
+        // v1.14: seed the fixed-amount late-check-out tier table for each room type.
+        foreach (var type in new[] { standard, deluxe, executive })
+        {
+            foreach (var tier in StayPricing.DefaultTiersFor(type.Name))
+            {
+                context.RoomTypeSurchargeTiers.Add(new RoomTypeSurchargeTier
+                {
+                    RoomTypeId = type.Id,
+                    FromHours = tier.FromHours,
+                    ToHours = tier.ToHours,
+                    Amount = tier.Amount
+                });
+            }
+        }
+
         await context.SaveChangesAsync();
 
         // 20 sample rooms total: 8 Standard, 7 Deluxe, 5 Executive (sample inventory).

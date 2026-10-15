@@ -39,6 +39,66 @@ public class BookingTests(HotelWebApplicationFactory factory) : IntegrationTestB
     }
 
     [Fact]
+    public async Task Create_rejects_a_check_out_before_the_booked_nights()
+    {
+        using var client = CreateClient();
+        var roomTypeId = await GetRoomTypeIdAsync(client, "Standard");
+
+        // 2 nights booked, but an explicit check-out of 15:00 -> 11:30 is 21.5h short of 48h (v1.15).
+        var checkIn = Clock.Today.AddDays(700);
+        var response = await SendCreateAsync(client, NewKey(), new
+        {
+            checkInDate = checkIn,
+            checkInTime = "15:00",
+            checkOutDate = checkIn.AddDays(2),
+            checkOutTime = "11:30",
+            adults = 1,
+            children = 0,
+            guest = new
+            {
+                firstName = "Early",
+                lastName = "Out",
+                email = $"early-out-{Guid.NewGuid():N}@example.com",
+                phoneNumber = UniquePhone()
+            },
+            rooms = new[] { new { roomTypeId, quantity = 1 } },
+            specialRequests = (string?)null
+        });
+
+        await AssertProblemAsync(response, (int)HttpStatusCode.BadRequest, "booking.checkout_too_early");
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_past_check_in()
+    {
+        using var client = CreateClient();
+        var roomTypeId = await GetRoomTypeIdAsync(client, "Standard");
+
+        // Well outside the 5-minute tolerance, so the policy rejects it (v1.15, rule 8).
+        var checkIn = Clock.Today.AddDays(-3);
+        var response = await SendCreateAsync(client, NewKey(), new
+        {
+            checkInDate = checkIn,
+            checkInTime = "14:00",
+            checkOutDate = checkIn.AddDays(1),
+            checkOutTime = "14:00",
+            adults = 1,
+            children = 0,
+            guest = new
+            {
+                firstName = "Pat",
+                lastName = "Past",
+                email = $"past-{Guid.NewGuid():N}@example.com",
+                phoneNumber = UniquePhone()
+            },
+            rooms = new[] { new { roomTypeId, quantity = 1 } },
+            specialRequests = (string?)null
+        });
+
+        await AssertProblemAsync(response, (int)HttpStatusCode.BadRequest, "booking.checkin_in_past");
+    }
+
+    [Fact]
     public async Task Replaying_same_key_and_payload_returns_existing_booking()
     {
         using var client = CreateClient();

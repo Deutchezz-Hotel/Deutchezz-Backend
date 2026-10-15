@@ -50,6 +50,13 @@ public class Booking : AuditableEntity
     public byte[]? ConcurrencyToken { get; set; }
 
     /// <summary>
+    /// UTC instant the front-desk check-out reminder was emailed for this booking (v1.16). Null
+    /// when no reminder has been sent yet; cleared whenever the stay is re-set so an extension
+    /// re-arms the reminder. Drives the worker's once-per-stay idempotency.
+    /// </summary>
+    public DateTime? CheckOutReminderSentAt { get; set; }
+
+    /// <summary>
     /// The single writer of a booking's stay (v1.12). Records the local (Africa/Lagos) check-in
     /// and check-out dates/times and derives the UTC <see cref="CheckInAt"/>/<see cref="CheckOutAt"/>
     /// instants and <see cref="Nights"/> that drive occupancy. <paramref name="lagosOffset"/> is the
@@ -65,6 +72,8 @@ public class Booking : AuditableEntity
         Nights = checkOutDate.DayNumber - checkInDate.DayNumber;
         CheckInAt = ToUtc(checkInDate, checkInTime, lagosOffset);
         CheckOutAt = ToUtc(checkOutDate, checkOutTime, lagosOffset);
+        // A new/changed check-out re-arms the front-desk reminder (v1.16).
+        CheckOutReminderSentAt = null;
     }
 
     /// <summary>The local wall-clock check-in time in Africa/Lagos, derived from <see cref="CheckInAt"/>.</summary>
