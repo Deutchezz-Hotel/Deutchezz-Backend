@@ -71,7 +71,7 @@ The tracked example contains a masked database password (`******`) for safety. R
 Host=localhost;Port=5432;Database=deutchezz;Username=postgres;Password=postgres_dev_password
 ```
 
-The example already contains safe development values for the JWT and OTP keys, demo seed accounts, CORS origins, SMTP placeholders, Cloudinary placeholders, and frontend URL. Replace placeholders only when the related feature needs a real external service.
+The example already contains safe development values for the JWT and OTP keys, CORS origins, and frontend URL. Replace the six `Seed:*` placeholders with the desired demo emails and passwords; each password must satisfy the Identity password policy (at least 8 characters and at least one digit). SMTP and Cloudinary values are placeholders and are only needed for those external services.
 
 ### 4. Configuration reference
 
@@ -88,12 +88,12 @@ The following table covers every key in `src\appsettings.json` and `src\appsetti
 | `Jwt:AccessTokenMinutes` | Access-token lifetime. | **Yes**; must be greater than zero. |
 | `Jwt:RefreshTokenDays` | Refresh-token lifetime. | **Yes**; must be greater than zero. |
 | `Jwt:Key` | JWT signing key. | **Yes**; must be at least 32 UTF-8 bytes. |
-| `Seed:AdminEmail` | Development administrator email. | Optional as a pair; if set, `Seed:AdminPassword` must also be set. |
-| `Seed:AdminPassword` | Development administrator password. | Optional as a pair; required to create the demo administrator. |
-| `Seed:ReceptionistEmail` | Development receptionist email. | No; if absent, the receptionist is skipped. |
-| `Seed:ReceptionistPassword` | Development receptionist password. | No; if absent, the receptionist is skipped. |
-| `Seed:CustomerEmail` | Development customer email. | No; if absent, the customer and demo bookings are skipped. |
-| `Seed:CustomerPassword` | Development customer password. | No; if absent, the customer is skipped. |
+| `Seed:AdminEmail` | Development administrator email. | Optional as a pair; if either admin seed value is missing, the demo administrator is skipped. |
+| `Seed:AdminPassword` | Development administrator password. | Optional as a pair; if either admin seed value is missing, the demo administrator is skipped. |
+| `Seed:ReceptionistEmail` | Development receptionist email. | Optional as a pair; if either receptionist seed value is missing, the demo receptionist is skipped. |
+| `Seed:ReceptionistPassword` | Development receptionist password. | Optional as a pair; if either receptionist seed value is missing, the demo receptionist is skipped. |
+| `Seed:CustomerEmail` | Development customer email. | Optional as a pair; if either customer seed value is missing, the demo customer and sample bookings are skipped. |
+| `Seed:CustomerPassword` | Development customer password. | Optional as a pair; if either customer seed value is missing, the demo customer and sample bookings are skipped. |
 | `Cancellation:WindowHours` | Cancellation window. | **Yes**; must be greater than zero. |
 | `Booking:DuplicateWarningMinutes` | Duplicate-booking warning window. | No; the model default is used if omitted. |
 | `Settings:MaxRoomsPerBooking` | Maximum room quantity per booking. | **Yes**; must be 1 through 1000. |
@@ -157,30 +157,29 @@ dotnet run --project .\src --launch-profile http
 
 The `http` profile sets `ASPNETCORE_ENVIRONMENT=Development` and listens on `http://localhost:5144`. The `https` profile listens on `https://localhost:7041` and also configures `http://localhost:5144`.
 
-On the first Development start, the API:
+On Development startup, the API:
 
 1. Applies pending EF Core migrations.
 2. Creates the `Administrator`, `Receptionist`, and `Customer` roles if missing.
-3. Seeds the administrator when both admin seed credentials are configured.
-4. Seeds the configured demo receptionist and customer.
-5. Seeds the three room types, surcharge tiers, and 20 sample rooms without replacing existing rows.
-6. Seeds four sample bookings for the demo customer when that customer has no bookings.
+3. Seeds each configured demo account only when both values in its `Seed:*Email`/`Seed:*Password` pair are present.
+4. Seeds three room types and their surcharge tiers, then adds any missing records from the 20-room sample inventory without replacing existing records.
+5. Creates four one-night, confirmed, pay-at-hotel sample bookings for the configured demo customer only when that customer exists and has no bookings. Prices are snapshotted from the selected room types' nightly rates.
 
-The migration and seed calls are Development-only. Production does not create the schema during application startup.
+Room inventory, demo receptionist/customer, and sample-booking seeding run only in Development. The migration, role, and administrator seed calls run in non-Production environments. Production does not create the schema during application startup.
 
 Development API documentation is available from the Scalar/OpenAPI mappings once the API is running. The exact browser URL is not configured in this repository; use the API base URL and the generated development documentation route shown in the startup output.
 
 ## Demo accounts
 
-The example configuration creates these development-only accounts:
+After replacing the email placeholders in the example configuration, Development startup creates the following development-only accounts when each email/password pair is configured:
 
 | Role | Email | Password location |
 |---|---|---|
-| Administrator | `admin@example.com` | `Seed:AdminPassword` in `src\appsettings.Development.json` |
-| Receptionist | `receptionist@deutchezz.local` | `Seed:ReceptionistPassword` in `src\appsettings.Development.json` |
-| Customer | `customer@deutchezz.local` | `Seed:CustomerPassword` in `src\appsettings.Development.json` |
+| Administrator | `Seed:AdminEmail` in `src\appsettings.Development.json` | `Seed:AdminPassword` in `src\appsettings.Development.json` |
+| Receptionist | `Seed:ReceptionistEmail` in `src\appsettings.Development.json` | `Seed:ReceptionistPassword` in `src\appsettings.Development.json` |
+| Customer | `Seed:CustomerEmail` in `src\appsettings.Development.json` | `Seed:CustomerPassword` in `src\appsettings.Development.json` |
 
-These are development-only demo credentials. Change them before sharing a development environment and never use them in production.
+The example's seed emails and passwords are placeholders. These are development-only demo credentials; change them before sharing a development environment and never use them in production.
 
 ## SMTP and Cloudinary
 
@@ -313,4 +312,21 @@ Build without running tests:
 dotnet build .\Deutchezz.sln
 ```
 
-The repository contains architecture, unit, and integration test projects under `tests\`. Integration tests use their configured test database settings; make sure the required PostgreSQL/test database is available before running the full suite.
+The repository contains architecture, unit, and integration test projects under `tests\`. The integration-test host reads its PostgreSQL connection from `DEUTCHEZZ_TEST_CONNECTION` (or the `ConnectionStrings:DefaultConnection` .NET user secret for the integration-test project's configured User Secrets ID); it does not automatically use `src\appsettings.json` or `src\appsettings.Development.json`. It redirects the database name to `deutchezz_test`. Create that database once using pgAdmin or `createdb deutchezz_test`, and provide a PostgreSQL user/password with access to it.
+
+To use the connection string from your ignored Development file without displaying it or adding it to tracked files, run this in PowerShell from the repository root:
+
+```powershell
+$development = Get-Content .\src\appsettings.Development.json -Raw | ConvertFrom-Json
+$testConnection = [regex]::Replace(
+    [string]$development.ConnectionStrings.DefaultConnection,
+    '(?i)(Host\s*=\s*)[^;]*',
+    { param($match) $match.Groups[1].Value + '127.0.0.1' })
+$testConnection = [regex]::Replace(
+    $testConnection,
+    '(?i)(Database\s*=\s*)[^;]*',
+    { param($match) $match.Groups[1].Value + 'deutchezz_test' })
+$env:DEUTCHEZZ_TEST_CONNECTION = $testConnection
+dotnet test
+Remove-Item Env:\DEUTCHEZZ_TEST_CONNECTION
+```
