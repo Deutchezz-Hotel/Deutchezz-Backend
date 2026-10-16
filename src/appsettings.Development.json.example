@@ -1,4 +1,4 @@
-{
+﻿{
   "Logging": {
     "LogLevel": {
       "Default": "Information",
@@ -17,11 +17,11 @@
   },
   "Seed": {
     "AdminEmail": "REPLACE_ME_ADMIN@example.com",
-    "AdminPassword": "REPLACE_ME_ADMIN_123",
+    "AdminPassword": "DevOnlyAdmin2026",
     "ReceptionistEmail": "REPLACE_ME_RECEPTIONIST@example.com",
-    "ReceptionistPassword": "REPLACE_ME_RECEPTIONIST_123",
+    "ReceptionistPassword": "DevOnlyReceptionist2026",
     "CustomerEmail": "REPLACE_ME_CUSTOMER@example.com",
-    "CustomerPassword": "REPLACE_ME_CUSTOMER_123"
+    "CustomerPassword": "DevOnlyCustomer2026"
   },
   "Cancellation": { "WindowHours": 24 },
   "Settings": {
