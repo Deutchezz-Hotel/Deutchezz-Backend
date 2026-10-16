@@ -158,6 +158,7 @@ if (!app.Environment.IsProduction())
     if (app.Environment.IsDevelopment())
     {
         await app.Services.SeedRoomInventoryAsync();
+        await app.Services.SeedDemoAccountsAsync();
     }
 }
 

@@ -24,9 +24,19 @@ public sealed class SeedOptions
 
     public string AdminEmail { get; set; } = string.Empty;
     public string AdminPassword { get; set; } = string.Empty;
+    public string ReceptionistEmail { get; set; } = string.Empty;
+    public string ReceptionistPassword { get; set; } = string.Empty;
+    public string CustomerEmail { get; set; } = string.Empty;
+    public string CustomerPassword { get; set; } = string.Empty;
 
     public bool HasAdminCredentials =>
         !string.IsNullOrWhiteSpace(AdminEmail) && !string.IsNullOrWhiteSpace(AdminPassword);
+
+    public bool HasReceptionistCredentials =>
+        !string.IsNullOrWhiteSpace(ReceptionistEmail) && !string.IsNullOrWhiteSpace(ReceptionistPassword);
+
+    public bool HasCustomerCredentials =>
+        !string.IsNullOrWhiteSpace(CustomerEmail) && !string.IsNullOrWhiteSpace(CustomerPassword);
 }
 
 public sealed class CancellationOptions
