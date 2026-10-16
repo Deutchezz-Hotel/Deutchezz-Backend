@@ -71,7 +71,7 @@ The tracked example contains a masked database password (`******`) for safety. R
 Host=localhost;Port=5432;Database=deutchezz;Username=postgres;Password=postgres_dev_password
 ```
 
-The example already contains safe development values for the JWT and OTP keys, CORS origins, and frontend URL. Replace the six `Seed:*` placeholders with the desired demo emails and passwords; each password must satisfy the Identity password policy (at least 8 characters and at least one digit). SMTP and Cloudinary values are placeholders and are only needed for those external services.
+The example already contains safe development values for the JWT and OTP keys, CORS origins, and frontend URL, plus local demo seed credentials. Replace the three demo emails/passwords as needed; each password must satisfy the Identity password policy (at least 8 characters, an uppercase letter, a lowercase letter, and a digit). SMTP and Cloudinary values are placeholders and are only needed for those external services.
 
 ### 4. Configuration reference
 
@@ -179,7 +179,8 @@ After replacing the email placeholders in the example configuration, Development
 | Receptionist | `Seed:ReceptionistEmail` in `src\appsettings.Development.json` | `Seed:ReceptionistPassword` in `src\appsettings.Development.json` |
 | Customer | `Seed:CustomerEmail` in `src\appsettings.Development.json` | `Seed:CustomerPassword` in `src\appsettings.Development.json` |
 
-The example's seed emails and passwords are placeholders. These are development-only demo credentials; change them before sharing a development environment and never use them in production.
+The example's seed emails are placeholders and its demo users are Peter Receptionist and Simon Fidelity.
+These demo credentials are for local Development only and must be changed before sharing an environment.
 
 ## SMTP and Cloudinary
 

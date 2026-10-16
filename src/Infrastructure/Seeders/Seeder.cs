@@ -56,11 +56,11 @@ public static class Seeder
 
         await EnsureSeedUserAsync(
             userManager, logger, seed.ReceptionistEmail, seed.ReceptionistPassword,
-            "Demo", "Receptionist", UserRole.Receptionist.ToString(), "receptionist");
+            "Peter", "Receptionist", UserRole.Receptionist.ToString(), "receptionist");
 
         var customer = await EnsureSeedUserAsync(
             userManager, logger, seed.CustomerEmail, seed.CustomerPassword,
-            "Demo", "Customer", UserRole.Customer.ToString(), "customer");
+            "Simon", "Fidelity", UserRole.Customer.ToString(), "customer");
 
         if (customer is null)
             return;
@@ -78,8 +78,8 @@ public static class Seeder
         {
             guest = new Guest
             {
-                FirstName = customer.FirstName ?? "Demo",
-                LastName = customer.LastName ?? "Customer",
+                FirstName = customer.FirstName ?? "Simon",
+                LastName = customer.LastName ?? "Fidelity",
                 Email = customer.Email ?? seed.CustomerEmail,
                 UserId = customer.Id
             };
