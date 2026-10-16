@@ -19,10 +19,11 @@ Run these commands from the repository root.
 
 ```powershell
 git clone <repository-url>
-Set-Location .\Deutchezz-Backend
+Set-Location .\<repository-folder-name>
 ```
 
-Replace `<repository-url>` with the repository URL supplied for your defense.
+The repository URL is `https://github.com/agbojisimon/Deutchezz-Backend.git`.
+Replace `<repository-folder-name>` with the folder created by `git clone`.
 
 ### 2. Start PostgreSQL
 
@@ -236,13 +237,17 @@ Do not include a path or trailing API route in an origin.
 
 ## Connecting the frontend
 
-The backend controllers use the `/api/...` path prefix. Set the frontend environment variable to the HTTP API base URL:
+The backend controllers use the `/api/v1` path prefix. Set the frontend environment variable to the HTTP API base URL:
 
 ```text
-VITE_API_URL=http://localhost:5144
+VITE_API_URL=http://localhost:5144/api/v1
 ```
 
-The frontend repository is not part of this backend repository, so its exact environment-file name and client-side path-joining convention are **UNKNOWN** here. If its client already appends `/api`, use the value above; if it expects the API prefix in the variable, use `VITE_API_URL=http://localhost:5144/api`.
+For the HTTPS launch profile, use:
+
+```text
+VITE_API_URL=https://localhost:7041/api/v1
+```
 
 ## Troubleshooting
 
