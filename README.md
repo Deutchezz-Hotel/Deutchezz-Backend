@@ -1,333 +1,264 @@
-# Deutchezz Hotel Backend
+# Deutchezz Hotel — Backend API
 
-## What this is
+ASP.NET Core 9 Web API for a hotel booking and front-desk system. It powers guest bookings, a reception console for check-in/check-out and payments, and an admin console for rooms, pricing, staff, and reports.
 
-Deutchezz Hotel is an ASP.NET Core booking API targeting .NET 9. It uses PostgreSQL through Entity Framework Core, ASP.NET Core Identity for users and roles, and JWT bearer tokens for authentication. The API exposes controller routes under `/api/...`; OpenAPI and Scalar are mapped in Development.
+> Personal portfolio project by Simon Agboji, using sample data.
 
-## Prerequisites
+**Frontend repo:** [Deutchezz-Hotel/Deutchezz-Frontend](https://github.com/Deutchezz-Hotel/Deutchezz-Frontend)
 
-- .NET SDK `9.0.316` or a compatible SDK in the .NET 9 feature band. The required SDK and roll-forward policy are pinned in `global.json`.
-- Docker Desktop with Docker Compose, or a local PostgreSQL 16 installation.
-- Git.
-- Windows PowerShell.
+[![.NET](https://github.com/Deutchezz-Hotel/Deutchezz-Backend/actions/workflows/dotnet.yml/badge.svg)](https://github.com/Deutchezz-Hotel/Deutchezz-Backend/actions/workflows/dotnet.yml)
 
-## Setup
+---
 
-Run these commands from the repository root.
+## Contents
 
-### 1. Clone the repository
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [API overview](#api-overview)
+- [Getting started](#getting-started)
+- [Demo accounts](#demo-accounts)
+- [Configuration](#configuration)
+- [Email and image uploads](#email-and-image-uploads)
+- [Testing and CI](#testing-and-ci)
+- [Troubleshooting](#troubleshooting)
 
-```powershell
-git clone <repository-url>
-Set-Location .\<repository-folder-name>
+## Features
+
+- **Booking engine** — availability search, price quotes with surcharge tiers, multi-room bookings, booking references, guest lookup and cancellation, duplicate-booking warnings, and cancellation windows.
+- **Three roles** — `Customer`, `Receptionist`, and `Administrator`, enforced with ASP.NET Core Identity, JWT access/refresh tokens, and authorization policies.
+- **Secure sign-up** — email OTP verification and password reset. Codes are HMAC-hashed, with resend cooldowns, hourly send limits, and failed-attempt lockout.
+- **Reception console** — walk-in bookings, room assignment, check-in/check-out, early and late check-out rules, and payment recording (cash, POS, bank transfer, online).
+- **Admin console** — rooms and room types (with Cloudinary images), settings and stay policy, staff and users, guests, payments, activity log, notifications, and reports.
+- **Background jobs** — expire unpaid pending bookings, clean up stale registrations, send check-out reminders, and purge old cancelled bookings.
+- **Transactional email** — templated booking, payment, verification, and staff-alert emails over SMTP (MailKit). Without credentials, emails are logged instead of sent.
+- **Hardening** — per-endpoint rate limiting, strict CORS, startup validation of all settings, and database conflict detection.
+
+## Tech stack
+
+| Area | Technology |
+|---|---|
+| Runtime | .NET 9, ASP.NET Core Web API, C# |
+| Data | PostgreSQL 16, Entity Framework Core 9 (Npgsql) |
+| Auth | ASP.NET Core Identity, JWT bearer, refresh tokens, OTP |
+| Email | MailKit (SMTP) |
+| Media | Cloudinary |
+| API docs | OpenAPI + Scalar |
+| Testing | xUnit, `WebApplicationFactory` integration tests, NetArchTest |
+| DevOps | Docker Compose (PostgreSQL), GitHub Actions CI |
+
+## Architecture
+
+Clean-architecture layering inside one application project (`src/Deutchezz.csproj`). The dependency direction is enforced by architecture tests.
+
+```
+src/
+├── Domain/          Entities, enums, constants
+├── Application/     Services, DTOs, booking rules, email templates, background workers
+├── Infrastructure/  EF Core, migrations, seeders, SMTP, Cloudinary, token/OTP services
+└── Api/             Controllers, OpenAPI configuration, Program.cs
+tests/
+├── Deutchezz.UnitTests/          Booking rules, stays, emails, contact
+├── Deutchezz.IntegrationTests/   Full HTTP flows against a real PostgreSQL database
+└── Deutchezz.ArchitectureTests/  Layer-dependency rules
 ```
 
-The repository URL is `https://github.com/agbojisimon/Deutchezz-Backend.git`.
-Replace `<repository-folder-name>` with the folder created by `git clone`.
+## API overview
+
+All routes are under `/api/v1`.
+
+| Area | Route | Access |
+|---|---|---|
+| Auth | `/api/v1/auth` | Public / signed in |
+| Room types & pricing | `/api/v1/room-types`, `/api/v1/pricing/quote` | Public |
+| Availability & stay policy | `/api/v1/availability/search`, `/api/v1/stay-policy` | Public |
+| Bookings | `/api/v1/bookings` (create), `/lookup`, `/cancel` | Public |
+| Contact | `/api/v1/contact` | Public |
+| My account | `/api/v1/me` | Customer |
+| Reception | `/api/v1/reception` | Receptionist, Administrator |
+| Admin | `/api/v1/admin` | Administrator |
+
+In Development, the interactive API reference is served at `/scalar/v1` and the OpenAPI document at `/openapi/v1.json`.
+
+## Getting started
+
+### Prerequisites
+
+- .NET SDK 9 (the exact version is pinned in `global.json`)
+- Docker Desktop, or a local PostgreSQL 16 install
+- Git
+
+### 1. Clone
+
+```powershell
+git clone https://github.com/Deutchezz-Hotel/Deutchezz-Backend.git
+Set-Location .\Deutchezz-Backend
+```
 
 ### 2. Start PostgreSQL
 
-The included `docker-compose.yml` starts PostgreSQL 16 as service `db`, creates database `deutchezz`, and publishes it on port `5432`.
-
 ```powershell
 docker compose up -d
-docker compose ps
 ```
 
-If Docker is not available, install PostgreSQL 16 locally and create the matching user and database from an administrator PowerShell session. The `psql` commands below use the same development credentials as `docker-compose.yml`:
+This starts PostgreSQL 16 on `localhost:5432` with a `deutchezz` database.
+
+<details>
+<summary>Using a local PostgreSQL install instead of Docker</summary>
 
 ```powershell
 psql -U postgres -c "CREATE USER postgres_dev WITH PASSWORD 'postgres_dev_password';"
 psql -U postgres -c "CREATE DATABASE deutchezz OWNER postgres_dev;"
 ```
 
-For that local alternative, change the example connection string to:
+Then use this connection string:
+`Host=localhost;Port=5432;Database=deutchezz;Username=postgres_dev;Password=postgres_dev_password`
 
-```text
-Host=localhost;Port=5432;Database=deutchezz;Username=postgres_dev;Password=postgres_dev_password
-```
+</details>
 
-If the local PostgreSQL installer already provides the `postgres` user, the Docker connection string can be used instead after creating the `deutchezz` database:
-
-```powershell
-psql -U postgres -c "CREATE DATABASE deutchezz;"
-```
-
-### 3. Create the Development configuration
+### 3. Create the Development config
 
 ```powershell
 Copy-Item .\src\appsettings.Development.json.example .\src\appsettings.Development.json
 ```
 
-`src\appsettings.Development.json` is ignored by Git and must not be committed. Open it locally:
+Open the new file and:
 
-```powershell
-notepad .\src\appsettings.Development.json
-```
+1. Replace the masked database password (`******`) with the Docker Compose one:
 
-The tracked example contains a masked database password (`******`) for safety. Replace it with the Docker Compose password:
+   ```text
+   Host=localhost;Port=5432;Database=deutchezz;Username=postgres;Password=postgres_dev_password
+   ```
 
-```text
-Host=localhost;Port=5432;Database=deutchezz;Username=postgres;Password=postgres_dev_password
-```
+2. Replace the `REPLACE_ME_…@example.com` seed emails (and passwords, if you like) under `Seed`. Each password must have at least 8 characters, including an uppercase letter, a lowercase letter, and a digit.
 
-The example already contains safe development values for the JWT and OTP keys, CORS origins, and frontend URL, plus local demo seed credentials. Replace the three demo emails/passwords as needed; each password must satisfy the Identity password policy (at least 8 characters, an uppercase letter, a lowercase letter, and a digit). SMTP and Cloudinary values are placeholders and are only needed for those external services.
+`appsettings.Development.json` is git-ignored. The example already contains safe development values for JWT/OTP keys, CORS, and the frontend URL. SMTP and Cloudinary values are placeholders, needed only for those services.
 
-### 4. Configuration reference
-
-The following table covers every key in `src\appsettings.json` and `src\appsettings.Development.json.example`. Values in `appsettings.Development.json` override the base settings when `ASPNETCORE_ENVIRONMENT=Development`.
-
-| Key | Purpose | Required to start? |
-|---|---|---|
-| `Logging:LogLevel:Default` | Default application log level. | No; default is usable. |
-| `Logging:LogLevel:Microsoft.AspNetCore` | ASP.NET Core log level. | No; default is usable. |
-| `AllowedHosts` | ASP.NET Core host filtering value. | No. |
-| `ConnectionStrings:DefaultConnection` | PostgreSQL connection string used by EF Core. | **Yes**; it must be nonempty and the database must be reachable because Development startup applies migrations. |
-| `Jwt:Issuer` | JWT issuer claim and validation value. | **Yes**; must be nonempty. |
-| `Jwt:Audience` | JWT audience claim and validation value. | **Yes**; must be nonempty. |
-| `Jwt:AccessTokenMinutes` | Access-token lifetime. | **Yes**; must be greater than zero. |
-| `Jwt:RefreshTokenDays` | Refresh-token lifetime. | **Yes**; must be greater than zero. |
-| `Jwt:Key` | JWT signing key. | **Yes**; must be at least 32 UTF-8 bytes. |
-| `Seed:AdminEmail` | Development administrator email. | Optional as a pair; if either admin seed value is missing, the demo administrator is skipped. |
-| `Seed:AdminPassword` | Development administrator password. | Optional as a pair; if either admin seed value is missing, the demo administrator is skipped. |
-| `Seed:ReceptionistEmail` | Development receptionist email. | Optional as a pair; if either receptionist seed value is missing, the demo receptionist is skipped. |
-| `Seed:ReceptionistPassword` | Development receptionist password. | Optional as a pair; if either receptionist seed value is missing, the demo receptionist is skipped. |
-| `Seed:CustomerEmail` | Development customer email. | Optional as a pair; if either customer seed value is missing, the demo customer and sample bookings are skipped. |
-| `Seed:CustomerPassword` | Development customer password. | Optional as a pair; if either customer seed value is missing, the demo customer and sample bookings are skipped. |
-| `Cancellation:WindowHours` | Cancellation window. | **Yes**; must be greater than zero. |
-| `Booking:DuplicateWarningMinutes` | Duplicate-booking warning window. | No; the model default is used if omitted. |
-| `Settings:MaxRoomsPerBooking` | Maximum room quantity per booking. | **Yes**; must be 1 through 1000. |
-| `Settings:CheckInTime` | Default check-in time. | **Yes**; must parse as a time. |
-| `Settings:CheckOutTime` | Default check-out time. | **Yes**; must parse as a time. |
-| `Settings:RequireFullPaymentAtCheckIn` | Payment gate at check-in. | No; default is false. |
-| `Settings:RequirePaymentBeforeCheckOut` | Payment gate at checkout. | No; default is false. |
-| `Settings:EarlyCheckOutRequiresAdmin` | Whether early checkout requires an administrator. | No; model default is used if omitted. |
-| `Settings:DefaultCheckInTime` | Stay-policy default check-in time. | No; model default is used if omitted. |
-| `Settings:DefaultCheckOutTime` | Stay-policy default check-out time. | No; model default is used if omitted. |
-| `Settings:TimeSlotMinutes` | Stay-policy time-slot size. | No; model default is used if omitted. |
-| `Settings:EarliestCheckInTime` | Earliest allowed check-in time. | No; model default is used if omitted. |
-| `Settings:LatestCheckInTime` | Latest allowed check-in time. | No; model default is used if omitted. |
-| `Settings:EarliestCheckOutTime` | Earliest allowed checkout time. | No; model default is used if omitted. |
-| `Settings:LatestCheckOutTime` | Latest allowed checkout time. | No; model default is used if omitted. |
-| `Settings:TurnaroundMinutes` | Room turnaround interval. | No; model default is used if omitted. |
-| `Settings:MaxStayNights` | Maximum stay length. | **Yes**; must be 1 through 365. |
-| `Settings:GraceHours` | Free late-checkout grace period. | **Yes**; must be 0 through 24. |
-| `Settings:CheckOutReminderLeadMinutes` | Reminder lead time. | **Yes**; must be 5 through 2880. |
-| `Settings:ReceptionNotificationEmails` | Staff inboxes for checkout reminders. | No; empty uses the admin notification address. |
-| `Jobs:PendingExpiryIntervalMinutes` | Pending-booking cleanup interval. | **Yes**; must be greater than zero. |
-| `Jobs:VerificationCleanupIntervalMinutes` | Pending-verification cleanup interval. | **Yes**; must be greater than zero. |
-| `Jobs:CheckOutReminderIntervalMinutes` | Checkout-reminder worker interval. | **Yes**; must be greater than zero. |
-| `BookingRetention:Enabled` | Enables cancelled-booking retention cleanup. | No; default is true. |
-| `BookingRetention:CancelledDays` | Cancelled-booking retention period. | **Yes**; must not be negative. |
-| `BookingRetention:IntervalMinutes` | Retention cleanup interval. | **Yes**; must be greater than zero. |
-| `Auth:CodeMinutes` | OTP and password-reset code lifetime. | **Yes**; must be greater than zero. |
-| `Auth:ResendCooldownSeconds` | OTP resend cooldown. | **Yes**; must not be negative. |
-| `Auth:MaxSendsPerHour` | OTP send limit per hour. | **Yes**; must be greater than zero. |
-| `Auth:PendingRegistrationHours` | Pending-registration retention period. | **Yes**; must be greater than zero. |
-| `Auth:MaxFailedAttempts` | Failed OTP attempts before invalidation. | **Yes**; must be greater than zero. |
-| `Security:OtpHmacKey` | HMAC key for OTP hashing. | **Yes**; must be at least 32 UTF-8 bytes. |
-| `Cors:AllowedOrigins` | Exact browser origins allowed by the `Frontend` CORS policy. | **Yes**; must contain at least one absolute URL. |
-| `RateLimiting:Auth:*` | Authentication request limit and window. | **Yes**; both values must be positive. |
-| `RateLimiting:Otp:*` | OTP request limit and window. | **Yes**; both values must be positive. |
-| `RateLimiting:Lookup:*` | Lookup request limit and window. | **Yes**; both values must be positive. |
-| `RateLimiting:BookingCreate:*` | Booking-create request limit and window. | **Yes**; both values must be positive. |
-| `RateLimiting:Contact:*` | Contact request limit and window. | **Yes**; both values must be positive. |
-| `Email:Smtp:Host` | SMTP server hostname. | No; SMTP is optional because the logging fallback is used without credentials. |
-| `Email:Smtp:Port` | SMTP server port. | **Yes**; must be a valid TCP port. |
-| `Email:Smtp:Username` | SMTP username. | No for startup; required for real email delivery. |
-| `Email:Smtp:Password` | SMTP password. | No for startup; required for real email delivery. |
-| `Email:Smtp:FromAddress` | SMTP sender address. | No for startup; required with credentials for real email delivery. |
-| `Email:Smtp:FromName` | Display name for outgoing email. | No. |
-| `Email:AdminNotificationAddress` | Staff notification mailbox. | No; leave empty to disable staff alerts. If set, it must be a deliverable-looking address. |
-| `Email:FrontendBaseUrl` | Frontend URL inserted into email links. | **Yes**; must be an absolute URL. |
-| `Email:RequireConfirmedEmail` | Legacy/example email-confirmation setting. | No; it is not part of the current `EmailOptions` model. |
-| `Cloudinary:CloudName` | Cloudinary account name for image uploads. | No for startup; required for image uploads. |
-| `Cloudinary:ApiKey` | Cloudinary API key. | No for startup; required for image uploads. |
-| `Cloudinary:ApiSecret` | Cloudinary API secret. | No for startup; required for image uploads. |
-
-Do not print or commit real SMTP, JWT, OTP, or Cloudinary secrets. For a personal machine, use the ignored Development file or .NET user secrets.
-
-### 5. Run the API
-
-Use the HTTP launch profile explicitly:
+### 4. Run
 
 ```powershell
 dotnet run --project .\src --launch-profile http
 ```
 
-The `http` profile sets `ASPNETCORE_ENVIRONMENT=Development` and listens on `http://localhost:5144`. The `https` profile listens on `https://localhost:7041` and also configures `http://localhost:5144`.
+| Profile | URLs |
+|---|---|
+| `http` | `http://localhost:5144` |
+| `https` | `https://localhost:7041` (also binds `http://localhost:5144`) |
 
-On Development startup, the API:
+On startup outside Production, the API applies migrations and seeds roles and the admin account. In Development it also seeds three room types with surcharge tiers, a 20-room sample inventory, the demo receptionist and customer, and four sample bookings for the customer. Existing records are never replaced, and Production never creates the schema on startup.
 
-1. Applies pending EF Core migrations.
-2. Creates the `Administrator`, `Receptionist`, and `Customer` roles if missing.
-3. Seeds each configured demo account only when both values in its `Seed:*Email`/`Seed:*Password` pair are present.
-4. Seeds three room types and their surcharge tiers, then adds any missing records from the 20-room sample inventory without replacing existing records.
-5. Creates four one-night, confirmed, pay-at-hotel sample bookings for the configured demo customer only when that customer exists and has no bookings. Prices are snapshotted from the selected room types' nightly rates.
+### 5. Connect the frontend
 
-Room inventory, demo receptionist/customer, and sample-booking seeding run only in Development. The migration, role, and administrator seed calls run in non-Production environments. Production does not create the schema during application startup.
-
-Development API documentation is available from the Scalar/OpenAPI mappings once the API is running. The exact browser URL is not configured in this repository; use the API base URL and the generated development documentation route shown in the startup output.
-
-## Demo accounts
-
-After replacing the email placeholders in the example configuration, Development startup creates the following development-only accounts when each email/password pair is configured:
-
-| Role | Email | Password location |
-|---|---|---|
-| Administrator | `Seed:AdminEmail` in `src\appsettings.Development.json` | `Seed:AdminPassword` in `src\appsettings.Development.json` |
-| Receptionist | `Seed:ReceptionistEmail` in `src\appsettings.Development.json` | `Seed:ReceptionistPassword` in `src\appsettings.Development.json` |
-| Customer | `Seed:CustomerEmail` in `src\appsettings.Development.json` | `Seed:CustomerPassword` in `src\appsettings.Development.json` |
-
-The example's seed emails are placeholders and its demo users are Peter Receptionist and Simon Fidelity.
-These demo credentials are for local Development only and must be changed before sharing an environment.
-
-## SMTP and Cloudinary
-
-### SMTP
-
-SMTP placeholders do not prevent the API from starting. When SMTP username/password and a sender address are not configured, the application selects `LoggingEmailSender`, which logs that an email was not sent instead of failing the business operation.
-
-With placeholders, OTP/verification emails, password-reset emails, booking notifications, and other transactional emails are not delivered. Email-dependent flows that require the recipient to receive a code, especially registration verification and password reset, cannot be completed through email until SMTP is configured.
-
-To enable SMTP, edit these keys in the ignored Development file with values from your mail provider:
-
-```text
-Email:Smtp:Host
-Email:Smtp:Port
-Email:Smtp:Username
-Email:Smtp:Password
-Email:Smtp:FromAddress
-Email:Smtp:FromName
-```
-
-`Email:AdminNotificationAddress` and `Settings:ReceptionNotificationEmails` may be left empty when staff notifications are not needed.
-
-### Cloudinary
-
-Cloudinary placeholders do not prevent startup. Image uploads still use `CloudinaryImageUploadService`; with invalid placeholder credentials, image upload requests return an upload failure/error. Configure `Cloudinary:CloudName`, `Cloudinary:ApiKey`, and `Cloudinary:ApiSecret` with a real Cloudinary account to enable room-type image uploads.
-
-## Ports and CORS
-
-The configured API URLs are:
-
-- HTTP: `http://localhost:5144`
-- HTTPS: `https://localhost:7041`
-- HTTPS profile also binds HTTP on `http://localhost:5144`
-- PostgreSQL: `localhost:5432`
-
-The default allowed frontend origins are:
-
-- `http://localhost:5173`
-- `http://localhost:3000`
-
-To add another frontend origin, add its exact absolute origin to `Cors:AllowedOrigins` in `src\appsettings.Development.json`, for example:
-
-```json
-"Cors": {
-  "AllowedOrigins": [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "http://localhost:4173"
-  ]
-}
-```
-
-Do not include a path or trailing API route in an origin.
-
-## Connecting the frontend
-
-The backend controllers use the `/api/v1` path prefix. Set the frontend environment variable to the HTTP API base URL:
+In the frontend's `.env`, set:
 
 ```text
 VITE_API_URL=http://localhost:5144/api/v1
 ```
 
-For the HTTPS launch profile, use:
+`http://localhost:5173` and `http://localhost:3000` are allowed by default in `Cors:AllowedOrigins`.
 
-```text
-VITE_API_URL=https://localhost:7041/api/v1
+## Demo accounts
+
+Each account is created only when both its email and password are set in `src/appsettings.Development.json`. Development only; never use these in production.
+
+| Role | Email | Password | Demo name |
+|---|---|---|---|
+| Administrator | `Seed:AdminEmail` | `Seed:AdminPassword` | — |
+| Receptionist | `Seed:ReceptionistEmail` | `Seed:ReceptionistPassword` | Peter Receptionist |
+| Customer | `Seed:CustomerEmail` | `Seed:CustomerPassword` | Simon Fidelity |
+
+## Configuration
+
+Settings are validated at startup, so the API refuses to start if a required value is missing or out of range. The main required keys are:
+
+| Key | Purpose |
+|---|---|
+| `ConnectionStrings:DefaultConnection` | PostgreSQL connection |
+| `Jwt:Key` (≥ 32 bytes), `Jwt:Issuer`, `Jwt:Audience` | Token signing and validation |
+| `Security:OtpHmacKey` (≥ 32 bytes) | OTP hashing |
+| `Cors:AllowedOrigins` | Exact frontend origins |
+| `Email:FrontendBaseUrl` | Absolute frontend URL used in email links |
+
+<details>
+<summary>Full configuration reference</summary>
+
+| Key | Purpose | Required to start? |
+|---|---|---|
+| `Logging:LogLevel:*` | Log levels | No |
+| `AllowedHosts` | Host filtering | No |
+| `ConnectionStrings:DefaultConnection` | PostgreSQL connection string | **Yes** |
+| `Jwt:Issuer` / `Jwt:Audience` | JWT claims and validation | **Yes** |
+| `Jwt:AccessTokenMinutes` / `Jwt:RefreshTokenDays` | Token lifetimes | **Yes** (> 0) |
+| `Jwt:Key` | JWT signing key | **Yes** (≥ 32 bytes) |
+| `Seed:AdminEmail` / `Seed:AdminPassword` | Development admin | No; skipped unless both are set |
+| `Seed:ReceptionistEmail` / `Seed:ReceptionistPassword` | Development receptionist | No; skipped unless both are set |
+| `Seed:CustomerEmail` / `Seed:CustomerPassword` | Development customer and sample bookings | No; skipped unless both are set |
+| `Cancellation:WindowHours` | Cancellation window | **Yes** (> 0) |
+| `Booking:DuplicateWarningMinutes` | Duplicate-booking warning window | No |
+| `Settings:MaxRoomsPerBooking` | Maximum rooms per booking | **Yes** (1–1000) |
+| `Settings:CheckInTime` / `Settings:CheckOutTime` | Default check-in/out times | **Yes** |
+| `Settings:RequireFullPaymentAtCheckIn` | Payment gate at check-in | No |
+| `Settings:RequirePaymentBeforeCheckOut` | Payment gate at check-out | No |
+| `Settings:EarlyCheckOutRequiresAdmin` | Early check-out needs admin | No |
+| `Settings:Default*/Earliest*/Latest*Time`, `TimeSlotMinutes`, `TurnaroundMinutes` | Stay-policy timing | No |
+| `Settings:MaxStayNights` | Maximum stay length | **Yes** (1–365) |
+| `Settings:GraceHours` | Free late check-out grace | **Yes** (0–24) |
+| `Settings:CheckOutReminderLeadMinutes` | Reminder lead time | **Yes** (5–2880) |
+| `Settings:ReceptionNotificationEmails` | Staff inboxes for reminders | No |
+| `Jobs:*IntervalMinutes` | Background job intervals | **Yes** (> 0) |
+| `BookingRetention:Enabled` / `CancelledDays` / `IntervalMinutes` | Cancelled-booking purge | Days and interval required |
+| `Auth:CodeMinutes`, `ResendCooldownSeconds`, `MaxSendsPerHour`, `PendingRegistrationHours`, `MaxFailedAttempts` | OTP rules | **Yes** |
+| `Security:OtpHmacKey` | OTP HMAC key | **Yes** (≥ 32 bytes) |
+| `Cors:AllowedOrigins` | Allowed browser origins | **Yes** (≥ 1 absolute URL) |
+| `RateLimiting:{Auth,Otp,Lookup,BookingCreate,Contact}:*` | Request limit and window per policy | **Yes** (positive values) |
+| `Email:Smtp:Host/Port/Username/Password/FromAddress/FromName` | SMTP delivery | Port must be valid; the rest only for real delivery |
+| `Email:AdminNotificationAddress` | Staff alert mailbox | No |
+| `Email:FrontendBaseUrl` | Frontend URL in email links | **Yes** (absolute URL) |
+| `Cloudinary:CloudName/ApiKey/ApiSecret` | Room-type image uploads | Only for uploads |
+
+</details>
+
+> Never commit real SMTP, JWT, OTP, or Cloudinary secrets. Use the git-ignored Development file or `dotnet user-secrets`.
+
+## Email and image uploads
+
+- **SMTP:** without credentials, the API uses `LoggingEmailSender`, which logs emails instead of sending them. Registration verification and password reset therefore can't be completed until SMTP is configured under `Email:Smtp:*`.
+- **Cloudinary:** placeholder credentials don't block startup, but image uploads will fail until real `Cloudinary:*` values are set.
+
+## Testing and CI
+
+```powershell
+dotnet test
 ```
+
+| Project | What it covers |
+|---|---|
+| `Deutchezz.UnitTests` | Booking guards, stay rules, email templates, contact |
+| `Deutchezz.IntegrationTests` | Auth, availability, bookings, pricing, payments, reception and walk-in flows, admin, policies |
+| `Deutchezz.ArchitectureTests` | Layer-dependency rules |
+
+Integration tests always use a separate `deutchezz_test` database, so your development data is never touched. Create it once (for example, `createdb deutchezz_test`, or via pgAdmin).
+
+The test host does **not** read `src/appsettings*.json`. It takes its connection from the `DEUTCHEZZ_TEST_CONNECTION` environment variable, or the `ConnectionStrings:DefaultConnection` user secret of the integration-test project. If neither is set, it uses `postgres` / `postgres` on `localhost:5432`. With the Docker Compose database:
+
+```powershell
+$env:DEUTCHEZZ_TEST_CONNECTION = "Host=localhost;Port=5432;Username=postgres;Password=postgres_dev_password"
+dotnet test
+```
+
+**CI:** GitHub Actions (`.github/workflows/dotnet.yml`) restores, builds, and runs the full test suite against a PostgreSQL 16 service on every push and pull request to `main`.
 
 ## Troubleshooting
 
-### PostgreSQL port 5432 is already in use
+| Problem | Fix |
+|---|---|
+| Port 5432 already in use | `Get-NetTCPConnection -LocalPort 5432 -State Listen` to find the process, or change the host port in `docker-compose.yml` and the connection string |
+| Migration / permission errors | Check `docker compose ps` and `docker compose logs db`; make sure the connection string matches |
+| "Key too short" on startup | `Jwt:Key` and `Security:OtpHmacKey` must each be at least 32 bytes |
+| CORS error in the browser | Add the exact frontend origin (scheme + host + port) to `Cors:AllowedOrigins` and restart. `localhost` and `127.0.0.1` count as different origins |
+| Reset the dev database | `docker compose down -v` then `docker compose up -d`, then run the API again to re-seed |
 
-Find the process using the port:
+## Author
 
-```powershell
-Get-NetTCPConnection -LocalPort 5432 -State Listen
-```
-
-Stop only the specific process after confirming it is safe, or stop the other PostgreSQL/container service. Alternatively, change the host-side compose port and update `ConnectionStrings:DefaultConnection` to the new host port. Keep the container port `5432`.
-
-### Migration or database permission errors
-
-Confirm that PostgreSQL is healthy and that the connection string points to the same host, port, database, username, and password:
-
-```powershell
-docker compose ps
-docker compose logs db
-```
-
-For a local PostgreSQL installation, verify that the configured user owns `deutchezz` or has permission to create and alter tables. The API applies migrations automatically only in non-Production environments.
-
-### JWT or OTP key too short
-
-`Jwt:Key` and `Security:OtpHmacKey` must each be at least 32 UTF-8 bytes. Use the safe values from the example for local development, or generate separate keys in PowerShell:
-
-```powershell
-$bytes = New-Object byte[] 64
-[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-[Convert]::ToBase64String($bytes)
-```
-
-Put the generated values in the ignored Development file or store them with .NET user secrets.
-
-### CORS error
-
-The browser origin must exactly match one of `Cors:AllowedOrigins`, including scheme and port. Add the frontend origin to the Development configuration and restart the API. `localhost` and `127.0.0.1` are different origins.
-
-### Reset the development database
-
-This removes the PostgreSQL container volume and all local development data:
-
-```powershell
-docker compose down -v
-docker compose up -d
-```
-
-Start the API again to apply migrations and recreate the Development seed data.
-
-## Running tests
-
-Run the complete solution test suite from the repository root:
-
-```powershell
-dotnet test
-```
-
-Build without running tests:
-
-```powershell
-dotnet build .\Deutchezz.sln
-```
-
-The repository contains architecture, unit, and integration test projects under `tests\`. The integration-test host reads its PostgreSQL connection from `DEUTCHEZZ_TEST_CONNECTION` (or the `ConnectionStrings:DefaultConnection` .NET user secret for the integration-test project's configured User Secrets ID); it does not automatically use `src\appsettings.json` or `src\appsettings.Development.json`. It redirects the database name to `deutchezz_test`. Create that database once using pgAdmin or `createdb deutchezz_test`, and provide a PostgreSQL user/password with access to it.
-
-To use the connection string from your ignored Development file without displaying it or adding it to tracked files, run this in PowerShell from the repository root:
-
-```powershell
-$development = Get-Content .\src\appsettings.Development.json -Raw | ConvertFrom-Json
-$testConnection = [regex]::Replace(
-    [string]$development.ConnectionStrings.DefaultConnection,
-    '(?i)(Host\s*=\s*)[^;]*',
-    { param($match) $match.Groups[1].Value + '127.0.0.1' })
-$testConnection = [regex]::Replace(
-    $testConnection,
-    '(?i)(Database\s*=\s*)[^;]*',
-    { param($match) $match.Groups[1].Value + 'deutchezz_test' })
-$env:DEUTCHEZZ_TEST_CONNECTION = $testConnection
-dotnet test
-Remove-Item Env:\DEUTCHEZZ_TEST_CONNECTION
-```
+**Simon Agboji** — Software Engineer (C# · ASP.NET Core)
+[Portfolio](https://simon-a.netlify.app) · [GitHub](https://github.com/agbojisimon) · [LinkedIn](https://www.linkedin.com/in/agboji-simon)
